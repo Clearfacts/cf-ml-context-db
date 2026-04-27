@@ -64,12 +64,16 @@ def load_s3_object(object_key, bucket_name='cf-queue-prod'):
 def upload_file(file_name, bucket, object_key):
     # Upload the file
     s3_client = boto3.client('s3')
-    s3_client.upload_file(file_name, bucket, object_key)
+    s3_client.upload_file(file_name, bucket, object_key, ExtraArgs={
+        'ExpectedBucketOwner': '077201410930'
+    })
 
 
-def load_s3_document(storage_key, bucket_name='cf-nodes-prod'):
-    s3 = boto3.resource('s3')
+def load_s3_document(storage_key, doc_type=None, bucket_name='cf-nodes-prod'):
+    s3 = boto3.resource('s3')    
     item_name = f"{storage_key}"
+    if doc_type:
+        item_name = f"{storage_key}/{doc_type}"
     if does_s3_key_exists(bucket_name, item_name):
         obj = s3.Object(bucket_name, item_name)
         return obj.get()['Body'].read()
