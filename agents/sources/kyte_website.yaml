@@ -1,0 +1,17 @@
+--- 
+title: Source Input File
+--- 
+name: kyte_website
+description: |
+  kyte product website. contains high level information about the product, its features, and its target audience. 
+  FAQ section with common questions and answers about the product. 
+  useful for understanding the product context, its value proposition, and common user inquiries. 
+type: website
+url: https://clearfacts.be/nl/kyte/
+boundaries: |
+  stay within the context of the kyte product, its features, and its target audience. 
+  don't navigate to other parts e.g. clearfacts product, company history, etc. 
+  bug DO navigate to the kyte product, FAQ and user (voor wie) sections. 
+context_layer_info: |
+  bussiness context and Application info mainly. 
+  try to derive user roles if possible, but not guaranteed.

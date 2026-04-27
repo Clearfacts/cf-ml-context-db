@@ -1,0 +1,12 @@
+# Service registry for cf-ml-context-db
+#
+# Maps related ClearFacts systems to local source paths so ontology importers,
+# enrichers, and support tooling can resolve source systems consistently.
+#
+# Fields:
+#   identifier  — string fragment or service name to match
+#   path        — path to the service repo root, relative to this repo's parent directory
+#   entry       — main entry file or directory relative to path
+#   mode        — php, python, sql, docs, or other source type
+
+services: {}

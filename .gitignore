@@ -1,0 +1,44 @@
+# Environment variables with secrets
+.env
+
+# Database configuration — local dev config has a hardcoded password so stays ignored.
+# Stage-specific configs (acc/prod) use pwd_env_name so are safe to commit.
+config/database.ini
+config/fab_models.yaml
+config/.aws
+
+# lambdas
+**/.serverless
+**/node_modules
+
+
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+workspace/**/extraction_agent/**

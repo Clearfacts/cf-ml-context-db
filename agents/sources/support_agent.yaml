@@ -1,0 +1,17 @@
+--- 
+title: Source Input File
+--- 
+name: support_agent
+description: |
+  An agentic system part of the ClearFacts Support Team, tasked with classifying incoming Freshdesk tickets and providing initial responses. The Support Agent is designed to assist users in troubleshooting problems, providing information about product features, and guiding them through common support processes. It leverages a combination of natural language processing and machine learning techniques to understand user queries, classify tickets based on their content, and generate appropriate responses. The agent continuously learns from interactions to improve its accuracy and effectiveness in handling support requests.
+  The ClearFacts Support Team handles both Kyte (invoicing software) and ClearFacts (pre-accounting software) products. 
+type: local source code
+folder: <parent_source_folder>/cf-ml-support-agent
+entry_points: 
+  - file: langchain_processors/prompts.py
+    function: prompts used in the support agent. covers high level Clearfacts and Kyte context    
+  - file: langchain_processors/glossary.py
+    function: glossary term list manually assembled (but not used in current version of the agent)
+context_layer_info: |
+  bussiness context and Application info mainly. 
+  try to derive user roles if possible, but not guaranteed.
