@@ -3,7 +3,7 @@
 ## Technical debt links
 - [Barometer IT](https://wolterskluwer.barometerit.com/b/system/041800002496)
 - [SonarQube Project](https://sonarqube.cloud-dev.wolterskluwer.eu/dashboard?id=clearfacts%3Acf-ml-context-db)
-- [Black Duck Project](https://wolterskluwer.app.blackduck.com/api/projects?q=name:cf-ml-context-db)
+- [Black Duck Project](https://wolterskluwer.app.blackduck.com/api/projects/628bca44-133a-45b4-8d0d-9a9fbb6725ca)
 - [Checkmarx Project](https://test4tools.cchaxcess.com/CxWebClient/Projects.aspx)
 
 ## Overview
