@@ -1,0 +1,17 @@
+--- 
+title: Source Input File
+--- 
+name: cf_accounting_ui_mapping
+description: |
+  This source refers to the main codebase of the ClearFacts webapp. 
+  The ontology should focus on the main entities and actions available in the UI and the main user journeys.
+  It should identify main UI Screens and the main entities and actions available on those screens and less on specific components or technical details.
+  capturing high level entry points per UI Screen would be ideal for further mapping in separate ontologies.  
+type: local source code
+folder: <parent_source_folder>/cf-accounting
+entry_points: | 
+  to be derived from initial code scans. 
+context_layer_info: |
+  clearfacts ui layer would be main target of the ontology 
+  bussiness context, user roles and data processing layers could also be captured if possible, but main focus should be on the UI layer and user journeys.
+  

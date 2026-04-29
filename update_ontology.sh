@@ -12,4 +12,4 @@ check_args "$@"
 
 SOURCE_YAML=$1 
 
-python3 agents/extraction_agent/orchestrate_run.py "$SOURCE_YAML" --agent-timeout 1800 -- copilot --allow-all --no-color -p "Read the instructions in {prompt_file}. Then perform the task exactly as specified. You must only modify {run_ontology}. Use {program} and {schema} as mandatory constraints and use {source_yaml} as source definition."
+python agents/extraction_agent/orchestrate_run.py "$SOURCE_YAML" --agent-timeout 1800 -- copilot --allow-all --no-color -p "Read the instructions in {prompt_file}. Then perform the task exactly as specified. You must only modify {run_ontology}. Use {program} and {schema} as mandatory constraints and use {source_yaml} as source definition."
