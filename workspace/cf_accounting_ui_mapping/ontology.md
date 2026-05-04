@@ -6,7 +6,7 @@
 - status: completed
 - source_location: /Users/dirkvangheel/Documents/dev/projects/clearfacts/cf-accounting
 - source_location_resolution: Resolved `<parent_source_folder>/cf-accounting` from `agents/sources/cf_accounting_ui_mapping.yaml` against the parent folder of this repository.
-- extraction_scope: Main client-side navigation, inbox/document-processing flows, settlements and payments, financial/history views, client settings, workflow automation, and accountant monitoring entry points in the ClearFacts accounting webapp.
+- extraction_scope: Main client-side navigation, inbox/document-processing flows, settlements and payments, financial/history views, client settings, workflow automation, accountant monitoring entry points, payment processing hub (to-process/executed/to-approve tabs), accountant integrations (API keys/PATs), notification configuration, and Peppol inbox call-to-action in the ClearFacts accounting webapp.
 
 ## Notes
 - This run-local ontology extends the initialized baseline using only source-grounded evidence from the declared `cf-accounting` repository.
@@ -525,6 +525,175 @@ entities:
       - "filter dossiers by name or status"
       - "review counts and status badges"
       - "open client settings from monitoring rows"
+
+  - id: "entity_payments_hub_screen_001"
+    name: "Payments hub screen"
+    description: "Main tabbed payment management page for clients exposing up to four tabs: Betaallijst (invoice/settlement list), Betalingen (to-approve, conditional), Uit te voeren (to-process), and Uitgevoerde (executed)."
+    context_layer: "application"
+    aliases: ["payments page", "client payments", "betalingen"]
+    related_terms: ["Betaallijst", "Uit te voeren", "Uitgevoerde", "SEPA", "payment approval"]
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:1-80"
+    confidence_score: 0.98
+    ambiguous: false
+    requires_validation: false
+    screen_type: "client_payment_hub"
+    tabs:
+      - "invoices (Betaallijst) — conditional on invoicesEnabled"
+      - "to-approve (Betalingen) — conditional on paymentApprovalFlowEnabled"
+      - "to-process (Uit te voeren)"
+      - "executed (Uitgevoerde)"
+
+  - id: "entity_to_process_payments_screen_001"
+    name: "To process payments screen"
+    description: "Screen listing payments that have been approved and are ready to be sent to the bank. Allows filtering by journal/IBAN and free text, setting a result limit, bulk-processing selected payments into a SEPA file, bulk-deleting, and adding a manual payment."
+    context_layer: "application"
+    aliases: ["Uit te voeren", "to-process", "approved payments"]
+    related_terms: ["SEPA file", "process payments", "IBAN filter", "manual payment", "financial journal"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:1-250; assets/react/applications/client-payments/pages/to-process/components/ProcessPaymentsModal.tsx:1-50"
+    confidence_score: 0.97
+    ambiguous: false
+    requires_validation: false
+    screen_type: "client_payment_processing"
+    primary_actions:
+      - "filter by IBAN/journal"
+      - "filter by free text"
+      - "set result limit"
+      - "select payments"
+      - "bulk process selected payments (creates SEPA file)"
+      - "bulk delete selected payments"
+      - "add manual payment"
+
+  - id: "entity_executed_payments_screen_001"
+    name: "Executed payments screen"
+    description: "Screen listing payments that have already been executed (sent to the bank). Includes an optional rejected payments sub-tab when the payment approval flow is enabled. Supports free-text filtering and back-navigation to SEPA order history."
+    context_layer: "application"
+    aliases: ["Uitgevoerde", "executed", "processed payments"]
+    related_terms: ["Verworpen betalingen", "rejected payments", "SEPA orders executed", "payment approval flow"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/executed/ExecutedPaymentsPage.tsx:1-80"
+    confidence_score: 0.96
+    ambiguous: false
+    requires_validation: false
+    screen_type: "client_payment_history"
+    primary_actions:
+      - "filter by free text"
+      - "switch to rejected payments tab (when approval flow enabled)"
+      - "navigate to SEPA order history"
+
+  - id: "entity_to_approve_payments_screen_001"
+    name: "To approve payments screen"
+    description: "Payment approval screen showing payments submitted for approval, split between payments awaiting the current user's approval and payments awaiting a colleague's approval. Only accessible when the dossier's payment approval flow is enabled."
+    context_layer: "application"
+    aliases: ["Betalingen (approval)", "to-approve tab"]
+    related_terms: ["paymentApprovalFlowEnabled", "approve payment", "deny payment", "colleague approval"]
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:21-28; src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/toApprove.html.twig:1-5"
+    confidence_score: 0.84
+    ambiguous: true
+    requires_validation: true
+    validation_notes: "Only the navigation entry and controller delegation were inspected; the detail React component for the approval table was not analyzed in this run."
+    screen_type: "client_payment_approval"
+
+  - id: "entity_accountant_integrations_screen_001"
+    name: "Accountant integrations screen"
+    description: "Accountant-level settings screen for managing API Keys and Personal Access Tokens used for external integrations. Accessible from the accountant's personal dropdown menu under 'Integraties'."
+    context_layer: "application"
+    aliases: ["Integraties", "integrations"]
+    related_terms: ["API key", "Personal Access Token", "accountant menu"]
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/AccountantBundle/Resources/views/Accountant/integrations.html.twig:1-18; assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:1-100"
+    confidence_score: 0.97
+    ambiguous: false
+    requires_validation: false
+    screen_type: "accountant_integration_management"
+    primary_actions:
+      - "create API key"
+      - "edit API key"
+      - "delete API key"
+      - "copy API key client ID"
+      - "create Personal Access Token"
+      - "delete Personal Access Token"
+
+  - id: "entity_notification_configuration_widget_001"
+    name: "Notification configuration widget"
+    description: "Profile-level widget that lets users configure which email notification types they receive. Covers Peppol invoice notifications, invoice approval notifications, and payment approval notifications. Only rendered when at least one notification type is available for the user."
+    context_layer: "application"
+    aliases: ["Email Notifications", "notification settings"]
+    related_terms: ["peppol_invoice", "invoice_approval", "payment_approval", "profile"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/profile/notifications/NotificationConfigurationWidget.tsx:1-70"
+    confidence_score: 0.95
+    ambiguous: false
+    requires_validation: false
+    screen_type: "user_notification_configuration"
+
+  - id: "entity_peppol_inbox_cta_001"
+    name: "Peppol registration call-to-action"
+    description: "Inline alert component rendered inside the purchase inbox when a client has not yet connected to Peppol and has not dismissed the banner. Provides a 'Start registration' button that opens the Peppol registration modal."
+    context_layer: "application"
+    aliases: ["Peppol CTA", "peppol-inbox-purchase-cta"]
+    related_terms: ["Peppol registration", "NOT_CONNECTED", "dismiss", "RegistrationModal"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-inbox/PeppolCallToAction/PeppolCallToAction.tsx:1-55"
+    confidence_score: 0.96
+    ambiguous: false
+    requires_validation: false
+    screen_type: "inline_call_to_action"
+
+  - id: "entity_payment_001"
+    name: "Payment"
+    description: "A payment record with supplier name, IBAN, amount, currency, journal IBAN, payment date, payment reference, method, status, and approval metadata. Statuses include in_approval, approved, denied, paid, and processing."
+    context_layer: "business_concepts"
+    aliases: ["betaling"]
+    related_terms: ["to-process payment", "executed payment", "status", "SEPA", "approval"]
+    source: "code_analysis"
+    extracted_from: "assets/react/api/payment/types.ts:1-30"
+    confidence_score: 0.98
+    ambiguous: false
+    requires_validation: false
+
+  - id: "entity_api_key_001"
+    name: "API key"
+    description: "An accountant-level API credential used for external integrations, with a client ID that can be copied, and lifecycle management (create, edit, delete)."
+    context_layer: "business_concepts"
+    aliases: ["API key", "integration key"]
+    related_terms: ["client ID", "integrations", "external system"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/ApiKeys/ApiKeysTable.tsx:1-50; assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:40-65"
+    confidence_score: 0.96
+    ambiguous: false
+    requires_validation: false
+
+  - id: "entity_personal_access_token_001"
+    name: "Personal Access Token"
+    description: "A personal API token tied to a user account, used for authenticating external integrations. Can be created and deleted from both the accountant integrations screen and the user profile."
+    context_layer: "business_concepts"
+    aliases: ["PAT", "personal token"]
+    related_terms: ["API access", "token", "integrations"]
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:65-100; assets/react/applications/profile/personalAccessTokens/PersonalAccessTokensTable.tsx"
+    confidence_score: 0.93
+    ambiguous: false
+    requires_validation: false
+
+  - id: "entity_journey_payment_processing_001"
+    name: "Payment processing journey"
+    description: "Journey where a client reviews to-process payments (approved by accountant or via approval flow), optionally filters by IBAN/journal, selects payments, processes them into a SEPA file, and then verifies the result in the executed payments screen."
+    context_layer: "application"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:1-250; assets/react/applications/client-payments/pages/executed/ExecutedPaymentsPage.tsx:1-80"
+    confidence_score: 0.95
+    ambiguous: false
+    requires_validation: false
+    journey_steps:
+      - "open payments hub"
+      - "navigate to to-process tab"
+      - "filter by IBAN/journal and text"
+      - "select payments to process"
+      - "confirm process payments and create SEPA file"
+      - "verify in executed payments tab"
 ```
 
 ## Relationships
@@ -1049,6 +1218,153 @@ associations:
     extracted_from: "assets/react/applications/monitoring/peppol/components/PeppolTable.tsx:30-113"
     confidence_score: 0.98
     implicit_or_explicit: "explicit"
+
+  - id: "assoc_workspace_routes_payments_hub"
+    source_entity_id: "entity_client_dossier_workspace_001"
+    relationship_id: "rel_routes_to_001"
+    target_entity_id: "entity_payments_hub_screen_001"
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:1-5"
+    confidence_score: 0.93
+    implicit_or_explicit: "inferred"
+    notes: "The payments page extends client.html.twig, confirming it is a client-side route. The precise nav entry point was not inspected in this run."
+
+  - id: "assoc_payments_hub_contains_to_process"
+    source_entity_id: "entity_payments_hub_screen_001"
+    relationship_id: "rel_contains_001"
+    target_entity_id: "entity_to_process_payments_screen_001"
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:36-40"
+    confidence_score: 0.98
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_payments_hub_contains_executed"
+    source_entity_id: "entity_payments_hub_screen_001"
+    relationship_id: "rel_contains_001"
+    target_entity_id: "entity_executed_payments_screen_001"
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:41-46"
+    confidence_score: 0.98
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_payments_hub_contains_to_approve"
+    source_entity_id: "entity_payments_hub_screen_001"
+    relationship_id: "rel_contains_001"
+    target_entity_id: "entity_to_approve_payments_screen_001"
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:21-28"
+    confidence_score: 0.87
+    implicit_or_explicit: "explicit"
+    notes: "Tab is only rendered when client.paymentApprovalFlowEnabled is true."
+
+  - id: "assoc_to_process_lists_payment"
+    source_entity_id: "entity_to_process_payments_screen_001"
+    relationship_id: "rel_lists_001"
+    target_entity_id: "entity_payment_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:75-90"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_executed_lists_payment"
+    source_entity_id: "entity_executed_payments_screen_001"
+    relationship_id: "rel_lists_001"
+    target_entity_id: "entity_payment_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/executed/ExecutedPaymentsPage.tsx:15-40"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_to_process_filters_payment"
+    source_entity_id: "entity_to_process_payments_screen_001"
+    relationship_id: "rel_filters_001"
+    target_entity_id: "entity_payment_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:85-145"
+    confidence_score: 0.96
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_purchase_inbox_contains_peppol_cta"
+    source_entity_id: "entity_purchase_inbox_screen_001"
+    relationship_id: "rel_contains_001"
+    target_entity_id: "entity_peppol_inbox_cta_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-inbox/PeppolCallToAction/PeppolCallToAction.tsx:1-55"
+    confidence_score: 0.94
+    implicit_or_explicit: "inferred"
+    notes: "The PeppolCallToAction component is conditionally rendered in the purchase inbox context when the client is not yet connected to Peppol."
+
+  - id: "assoc_integrations_screen_lists_api_keys"
+    source_entity_id: "entity_accountant_integrations_screen_001"
+    relationship_id: "rel_lists_001"
+    target_entity_id: "entity_api_key_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:40-65; assets/react/applications/accountant/pages/integrations/ApiKeys/ApiKeysTable.tsx:1-50"
+    confidence_score: 0.98
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_integrations_screen_lists_pats"
+    source_entity_id: "entity_accountant_integrations_screen_001"
+    relationship_id: "rel_lists_001"
+    target_entity_id: "entity_personal_access_token_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:65-100"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_integrations_screen_configures_api_keys"
+    source_entity_id: "entity_accountant_integrations_screen_001"
+    relationship_id: "rel_configures_001"
+    target_entity_id: "entity_api_key_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:40-65"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_integrations_screen_configures_pats"
+    source_entity_id: "entity_accountant_integrations_screen_001"
+    relationship_id: "rel_configures_001"
+    target_entity_id: "entity_personal_access_token_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/accountant/pages/integrations/IntegrationsPage.tsx:65-100"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_journey_payment_processing_uses_payments_hub"
+    source_entity_id: "entity_journey_payment_processing_001"
+    relationship_id: "rel_uses_screen_001"
+    target_entity_id: "entity_payments_hub_screen_001"
+    source: "code_analysis"
+    extracted_from: "src/Tactics/Bundle/PaymentBundle/Resources/views/Payment/payments.html.twig:1-80"
+    confidence_score: 0.95
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_journey_payment_processing_uses_to_process"
+    source_entity_id: "entity_journey_payment_processing_001"
+    relationship_id: "rel_uses_screen_001"
+    target_entity_id: "entity_to_process_payments_screen_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:1-250"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_journey_payment_processing_uses_executed"
+    source_entity_id: "entity_journey_payment_processing_001"
+    relationship_id: "rel_uses_screen_001"
+    target_entity_id: "entity_executed_payments_screen_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/executed/ExecutedPaymentsPage.tsx:1-80"
+    confidence_score: 0.95
+    implicit_or_explicit: "explicit"
+
+  - id: "assoc_journey_payment_processing_acts_on_payment"
+    source_entity_id: "entity_journey_payment_processing_001"
+    relationship_id: "rel_acts_on_001"
+    target_entity_id: "entity_payment_001"
+    source: "code_analysis"
+    extracted_from: "assets/react/applications/client-payments/pages/to-process/ToProcessPaymentsPage.tsx:1-250"
+    confidence_score: 0.97
+    implicit_or_explicit: "explicit"
 ```
 
 ## Category Memberships
@@ -1209,9 +1525,57 @@ category_memberships:
     category_id: "cat_cf_user_journeys_001"
     source: "code_analysis"
     confidence_score: 0.97
+  - id: "catmem_ui_payments_hub"
+    entity_id: "entity_payments_hub_screen_001"
+    category_id: "cat_cf_ui_screens_001"
+    source: "code_analysis"
+    confidence_score: 0.98
+  - id: "catmem_ui_to_process_payments"
+    entity_id: "entity_to_process_payments_screen_001"
+    category_id: "cat_cf_ui_screens_001"
+    source: "code_analysis"
+    confidence_score: 0.97
+  - id: "catmem_ui_executed_payments"
+    entity_id: "entity_executed_payments_screen_001"
+    category_id: "cat_cf_ui_screens_001"
+    source: "code_analysis"
+    confidence_score: 0.96
+  - id: "catmem_ui_to_approve_payments"
+    entity_id: "entity_to_approve_payments_screen_001"
+    category_id: "cat_cf_ui_screens_001"
+    source: "code_analysis"
+    confidence_score: 0.84
+  - id: "catmem_ui_accountant_integrations"
+    entity_id: "entity_accountant_integrations_screen_001"
+    category_id: "cat_cf_monitoring_001"
+    source: "code_analysis"
+    confidence_score: 0.97
+  - id: "catmem_obj_payment"
+    entity_id: "entity_payment_001"
+    category_id: "cat_cf_business_objects_001"
+    source: "code_analysis"
+    confidence_score: 0.98
+  - id: "catmem_obj_api_key"
+    entity_id: "entity_api_key_001"
+    category_id: "cat_cf_business_objects_001"
+    source: "code_analysis"
+    confidence_score: 0.95
+  - id: "catmem_obj_personal_access_token"
+    entity_id: "entity_personal_access_token_001"
+    category_id: "cat_cf_business_objects_001"
+    source: "code_analysis"
+    confidence_score: 0.93
+  - id: "catmem_journey_payment_processing"
+    entity_id: "entity_journey_payment_processing_001"
+    category_id: "cat_cf_user_journeys_001"
+    source: "code_analysis"
+    confidence_score: 0.95
 ```
 
 ## Validation Notes
 - `entity_outbox_process_screen_001` and `entity_in_progress_screen_001` are grounded in navigation evidence, but their internal page implementations were not inspected in this run.
 - `entity_accountant_monitoring_screen_001` clearly exposes additional tabs beyond Kyte and Peppol (`tasks`, `client invoices`, `AIR`, `SEPA`, `CodaBox`, `mobile`), but only the Kyte and Peppol React tabs were analyzed at screen-component level.
 - `src/BookMate/BookMateBundle/Resources/views/ClientDefault/menu.html.twig:3-13` suppresses the worklist, history, and help blocks inherited from the default client menu, so some client-menu capabilities vary by product variant.
+- `entity_to_approve_payments_screen_001` is grounded in the host template and controller delegation only; the approval table React components were not analyzed in this run.
+- `entity_notification_configuration_widget_001` is identified as a profile-level widget but its exact host page (client profile vs. standalone) was not confirmed from a navigation entry point in this run.
+- The precise client-side nav entry point for `entity_payments_hub_screen_001` was not inspected (payments.html.twig extends `client.html.twig`, confirming it is client-scoped but the side-nav link was not located).

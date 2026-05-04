@@ -1,0 +1,53 @@
+---
+title: Source Input File
+---
+name: navigation_agent_clearfacts
+description: |
+  Interactive exploration source for the Clearfacts web application.
+  This source is used by the navigation agent to explore the application step by step,
+  map user-visible features into ontology.md, and persist browser evidence that can later
+  support documentation, navigation guidance, and test automation.
+type: website
+url: https://staging.acc.clearfacts.be
+users_file: ../../../cf-integration-tests/cypress/fixtures/users.json
+default_role: sme_admin
+available_roles:
+  - accountant
+  - sme_admin
+  - sme_fullaccess
+  - sme_docprocessing
+  - sme_docprocessingarchive
+  - sme_fullfeedback
+  - sme_docdelivery
+playwright:
+  command: npx
+  args:
+    - -y
+    - "@playwright/mcp@latest"
+    - --browser
+    - chrome
+  headless: false
+  step_delay_ms: 500
+environment_notes:
+  - Uses the staging Clearfacts environment.
+  - Credentials are resolved from the external Cypress users fixture.
+  - Exploration evidence should be persisted in the workspace run folder for later replay and ontology refinement.
+entry_points:
+  - name: Login page
+    path: /login
+    purpose: Discover the authentication flow and role-specific entry paths.
+    hints:
+      - Identify username/password fields and login submit controls.
+      - Capture visible labels and any authentication warnings or notices.
+  - name: Purchase inbox
+    purpose: Explore the purchase intake journey for SME users.
+    hints:
+      - Capture upload, send, approve, and other document-processing actions if visible.
+  - name: Dashboard or landing page
+    purpose: Identify the first role-specific landing page after a successful login.
+ontology_guidance: |
+  Extend ontology.md incrementally so it becomes useful for both human guidance and future agentic navigation/testing.
+  Capture screens, user-visible actions, labels, role differences, navigation paths, and validation notes.
+context_layer_info: |
+  Main focus is the Clearfacts UI/application layer and the user-facing exploration path.
+  The resulting ontology should help explain what users can do, how they navigate, and which labels/actions are visible.

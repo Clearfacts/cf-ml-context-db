@@ -26,4 +26,45 @@
 - `config/database.ini` includes a safe local SQLite default for the context database and placeholder sections for related ClearFacts databases.
 
 ## Streamlit
-- Run `streamlit run streamlit/app.py` to start the source ontology query UI.
+- Run `streamlit run streamlit/app.py` to start the Streamlit app.
+- The app now includes:
+  - an **Explore app** tab for interactive Clearfacts navigation and mapping
+  - an **Ontology query** tab for the existing finalized-source ontology queries
+  - the exploration tab now uses the **DeepAgents navigation coordinator**, which orchestrates the existing Clearfacts navigation runtime
+  - the exploration tab uses the navigation source configuration, which now launches Chrome in headed mode by default so you can follow along
+  - the exploration tab keeps a live Playwright MCP browser session open for the active run until you explicitly close it or start a different run
+  - the exploration tab surfaces persisted DeepAgents trace artifacts alongside the latest execution evidence
+
+## Clearfacts navigation agent
+- The interactive Clearfacts exploration agent lives in `context_db/agents/clearfacts_navigation_agent/`.
+- The DeepAgents orchestration layer lives in `context_db/agents/clearfacts_navigation_deepagent/`.
+- Source-driven configuration now lives in `agents/sources/navigation_agent_clearfacts.yaml`.
+- Exploration runs are persisted under `workspace/<source_name>/navigation_agent/<timestamp>/`.
+- Each run stores:
+  - run-local `ontology.md`
+  - `manifest.yaml`
+  - `events.jsonl`
+  - `snapshots/` with a human-readable page summary plus the raw MCP snapshot
+  - `logs/`
+  - `browser_profile/`
+- DeepAgents coordinator and subagent traces are persisted under `logs/deepagent_traces/`.
+- `ClearfactsNavigationDeepAgent` now exposes both:
+  - `invoke(...)` for interactive navigation/exploration
+  - `validate(...)` for validator-driven claim/procedure replay that returns `supports`, `contradicts`, or `inconclusive` with observed evidence
+- The ontology remains markdown and is extended with structured sections for:
+  - exploration targets
+  - screens
+  - actions
+  - labels
+  - navigation paths
+  - validation notes
+  - open questions
+- Use `agents/navigation_agent/setup_run.py` to create a run explicitly, or let the agent create one on first invocation.
+- Use `agents/navigation_agent/finalize_run.py` to promote a run-local ontology to the baseline source ontology.
+- Example CLI invocation:
+
+```bash
+python -m context_db.agents.clearfacts_navigation_agent.cli \
+  "Log in and explore where an SME user can upload purchase invoices" \
+  --role sme_admin
+```

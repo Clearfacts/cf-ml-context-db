@@ -27,6 +27,7 @@ def init_token_tracking() -> None:
     if not enabled:        
         return
 
+    
     db_config_file = os.environ.get("DB_CONFIG_FILE", "config/database.ini")
     db_section = os.environ.get("DB_SECTION", "context_db")
     project = os.environ.get("CF_LLM_TRACKING_PROJECT", "cf-ml-context-db")

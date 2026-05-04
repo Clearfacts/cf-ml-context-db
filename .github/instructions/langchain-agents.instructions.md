@@ -19,8 +19,21 @@ Apply these instructions when creating or updating LangChain-based agents, subag
 Example:
 
 ```python
+AGENT_NAME = "gpc_batch_taxonomy_agent"
+subagent_graph = create_agent(
+      model=self.llm,
+      tools=[
+          get_gpc_segments, get_gpc_families, get_gpc_classes,
+          get_gpc_bricks, get_gpc_brick_details, search_gpc_by_title,
+          get_gpc_navigation_options,
+      ],
+      system_prompt=GPC_BATCH_TAXONOMY_PROMPT,
+      response_format=GPCBatchTaxonomyResult,
+      name=AGENT_NAME,
+  )
+
 self.gpc_batch_subagent = CompiledSubAgent(
-    name="gpc-batch-taxonomy-agent",
+    name=AGENT_NAME,
     description=(
         "Classifies a batch of similar invoice lines (maximum 8 lines per call) "
         "against the GPC taxonomy. "

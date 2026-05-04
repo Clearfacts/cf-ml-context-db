@@ -53,26 +53,56 @@ this will be our base context system from which we'll build a series of AI agent
 - create sql create script in sql/entity_model.sql
 - database: ContextDb 
  
+## Sources 
+
+check `agents/sources` folder for up to date list
+
+- Business / User Level:
+  - kyte website     
+    - high level document example -> web scraper
+  - support agent:  
+    - source code -> focus on prompts and glossary terms already defined
+- Application Level:
+  - UI:
+    - cf_accounting ui analysis:
+      - UI components are split over different components / technologies 
+      - more recent React projects are e.g. seperate -> cf_pay, cf_preview (sme portal), cf_werklijst
+  - Backend:
+    - how to capture high level data processing steps? 
+
 ## The Team 
 
 
-- extraction agent:
-  - per component 1 folder
-  - extract entities:
-    - how to define entities -> see model
-    - 
+### extraction agent:
+  
+  - given a source build the ontology.
+    - source file can be used to tune the scope and purpose of the ontology (and the scope of the extraction run)
 
-folder: scripts/import 
+  - Status/TODOs:       
+    - validation ideas: 
+      - coverage of terms from random sample of freshdesk tickets 
+      - NLI approach 
+    - improvement loops:
+      - extraction agent should create a validation.md file with validation notes, questions, summary of scope, ... 
+      - human should review and respond in the same file. 
+      - human should update the sources yaml file in case of scope changes. 
+        - question: should we allow validation agents to update source yaml files? (or communicate via validation.md)
+      - validation.md becomes input to the next run. 
 
-01_support_agent.sql <- convert entities defined in cf-ml-support-agent/langchain_processors/glossary.py  
-and convert into insert statements. use comments and other info from the file to create initial entity types
-that make sense in our setting
+### navigation agent:
 
-cf-ml-support-agent/langchain_processors/prompts.py  -> have an agent populate the tables 
+  - purpose: validation 
+  - flow:
+    - validation agent (not this one) queries UI ontology for specific user flow
+    - navigation agent is used to run the given flow
+      - agent should be thinking at similar level of a regular user to evaluate the instructions from the ui ontology. 
+      - outcomes:
+        - target reached
+        - unclear instructions 
+        - missing steps 
+        - errors
+    - navigation agent reports back to validation agent
 
-validation: 
-
-- coverage of terms from random sample of freshdesk tickets 
 
 ## review module 
 
