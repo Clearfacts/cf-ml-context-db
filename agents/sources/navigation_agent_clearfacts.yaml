@@ -46,8 +46,8 @@ entry_points:
   - name: Dashboard or landing page
     purpose: Identify the first role-specific landing page after a successful login.
 ontology_guidance: |
-  Extend ontology.md incrementally so it becomes useful for both human guidance and future agentic navigation/testing.
-  Capture screens, user-visible actions, labels, role differences, navigation paths, and validation notes.
+  Extend ontology.md through checkpoint/batch updates so it becomes useful for both human guidance and future agentic navigation/testing.
+  Capture screens, user-visible actions, labels, role differences, navigation paths, reusable route steps, success criteria, and validation notes.
 context_layer_info: |
   Main focus is the Clearfacts UI/application layer and the user-facing exploration path.
   The resulting ontology should help explain what users can do, how they navigate, and which labels/actions are visible.

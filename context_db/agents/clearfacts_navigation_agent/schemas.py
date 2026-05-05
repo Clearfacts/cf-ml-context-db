@@ -54,7 +54,7 @@ class PlaywrightMcpServerConfig(BaseModel):
     step_delay_ms: int = Field(
         default=0,
         ge=0,
-        description="Optional pause after visible browser actions so exploration is easier to follow.",
+        description="Base backoff delay for transient navigation-error retries.",
     )
 
 
@@ -85,7 +85,15 @@ class NavigationScreenObservation(BaseModel):
     url: str | None = Field(default=None, description="Observed URL if available.")
     title: str | None = Field(default=None, description="Observed page title if available.")
     description: str = Field(description="What the page or screen appears to be used for.")
+    user_help_summary: str | None = Field(
+        default=None,
+        description="Optional user-facing explanation of how this screen is used.",
+    )
     labels: list[str] = Field(default_factory=list, description="Important visible labels or headings for this screen.")
+    navigation_hints: list[str] = Field(
+        default_factory=list,
+        description="Reusable hints for navigating to or recognizing this screen.",
+    )
     role_scope: list[str] = Field(default_factory=list, description="Roles for which this observation was seen.")
     evidence: list[str] = Field(default_factory=list, description="Provenance references such as event IDs or snapshot files.")
 
@@ -106,11 +114,59 @@ class NavigationLabelObservation(BaseModel):
     evidence: list[str] = Field(default_factory=list, description="Provenance references such as event IDs or snapshot files.")
 
 
+class NavigationRouteStep(BaseModel):
+    operation: ExplorationActionType = Field(description="Typed browser operation for deterministic route execution.")
+    instruction: str = Field(description="Short instruction explaining this route step.")
+    target: str | None = Field(default=None, description="Selector, affordance key, label, or current snapshot ref.")
+    url: str | None = Field(default=None, description="URL for navigate_url operations.")
+    text: str | None = Field(default=None, description="Text for type_text or wait_for_text operations.")
+    key: str | None = Field(default=None, description="Keyboard key for press_key operations.")
+    credential_field: CredentialField | None = Field(default=None, description="Credential field for type_role_credential.")
+    expected_outcome: str | None = Field(default=None, description="Expected observable result after the step.")
+
+    @model_validator(mode="after")
+    def validate_operation_fields(self) -> "NavigationRouteStep":
+        self.instruction = self.instruction.strip()
+        if not self.instruction:
+            raise ValueError("Route step instruction cannot be empty.")
+        required_by_operation = {
+            ExplorationActionType.NAVIGATE_URL: ("url",),
+            ExplorationActionType.CLICK: ("target",),
+            ExplorationActionType.TYPE_TEXT: ("target", "text"),
+            ExplorationActionType.TYPE_ROLE_CREDENTIAL: ("target", "credential_field"),
+            ExplorationActionType.PRESS_KEY: ("key",),
+            ExplorationActionType.WAIT_FOR_TEXT: ("text",),
+        }
+        missing = [
+            field_name
+            for field_name in required_by_operation.get(self.operation, ())
+            if getattr(self, field_name) in (None, "")
+        ]
+        if missing:
+            raise ValueError(
+                f"Route step operation '{self.operation.value}' is missing required field(s): {', '.join(missing)}"
+            )
+        return self
+
+
 class NavigationPathObservation(BaseModel):
     description: str = Field(description="Summary of a discovered path through the UI.")
     from_screen: str | None = Field(default=None, description="Origin screen if known.")
     to_screen: str | None = Field(default=None, description="Destination screen if known.")
     action_summary: str = Field(description="Action summary for how the path was traversed.")
+    route_steps: list[str] = Field(
+        default_factory=list,
+        description="Reusable high-level route steps for faster future navigation.",
+    )
+    typed_route_steps: list[NavigationRouteStep] = Field(
+        default_factory=list,
+        description="Executable typed route steps for deterministic navigation cache execution.",
+    )
+    success_criteria: list[str] = Field(
+        default_factory=list,
+        description="Observable facts that indicate this path reached the intended destination.",
+    )
+    confidence: str | None = Field(default=None, description="Confidence level such as low, medium, or high.")
     evidence: list[str] = Field(default_factory=list, description="Provenance references such as event IDs or snapshot files.")
 
 

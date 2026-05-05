@@ -17,8 +17,11 @@ from typing import Any
 import yaml
 from langchain_core.tools import tool
 
+from .route_steps import backfill_typed_route_steps
 from .schemas import (
     ClearfactsNavigationResult,
+    ExplorationAction,
+    ExplorationActionType,
     NavigationActionObservation,
     NavigationEventRecord,
     NavigationExecutionStatus,
@@ -28,6 +31,7 @@ from .schemas import (
     NavigationPageAffordance,
     NavigationPageEvidence,
     NavigationPathObservation,
+    NavigationRouteStep,
     NavigationScreenObservation,
     NavigationSourceConfig,
     NavigationSourceEntryPoint,
@@ -46,6 +50,13 @@ TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 DEFAULT_PLAYWRIGHT_MCP_COMMAND = "npx"
 DEFAULT_PLAYWRIGHT_MCP_ARGS = ["-y", "@playwright/mcp@latest"]
 BLANK_PAGE_URLS = {"", "about:blank", "data:,"}
+TRANSIENT_NAVIGATION_ERROR_SNIPPETS = (
+    "execution context was destroyed",
+    "most likely because of a navigation",
+    "browserbackend.calltool",
+    "target closed",
+    "frame was detached",
+)
 
 SECTION_ROOTS = {
     "Exploration Targets": "exploration_targets",
@@ -70,6 +81,11 @@ class PlaywrightToolExecutionError(RuntimeError):
         self.tool_name = tool_name
         self.arguments = arguments
         self.message = message
+
+
+def is_transient_navigation_error(message: str | None) -> bool:
+    normalized = (message or "").lower()
+    return any(snippet in normalized for snippet in TRANSIENT_NAVIGATION_ERROR_SNIPPETS)
 
 
 @dataclass
@@ -426,6 +442,32 @@ def _merge_unique_strings(existing: list[str], new_values: list[str]) -> list[st
     return merged
 
 
+def _route_step_key(step: NavigationRouteStep) -> str:
+    return "|".join(
+        str(part or "").strip().lower()
+        for part in [
+            step.operation.value,
+            step.instruction,
+            step.target,
+            step.url,
+            step.text,
+            step.key,
+            step.credential_field.value if step.credential_field else None,
+        ]
+    )
+
+
+def _merge_route_steps(existing: list[NavigationRouteStep], new_values: list[NavigationRouteStep]) -> list[NavigationRouteStep]:
+    merged = list(existing)
+    seen = {_route_step_key(step) for step in merged}
+    for step in new_values:
+        key = _route_step_key(step)
+        if key not in seen:
+            merged.append(step)
+            seen.add(key)
+    return merged
+
+
 def _screen_key(item: NavigationScreenObservation) -> str:
     return (item.url or item.title or item.name).strip().lower()
 
@@ -476,7 +518,9 @@ def _merge_screen(existing: NavigationScreenObservation, new_item: NavigationScr
         url=new_item.url or existing.url,
         title=new_item.title or existing.title,
         description=new_item.description or existing.description,
+        user_help_summary=new_item.user_help_summary or existing.user_help_summary,
         labels=_merge_unique_strings(existing.labels, new_item.labels),
+        navigation_hints=_merge_unique_strings(existing.navigation_hints, new_item.navigation_hints),
         role_scope=_merge_unique_strings(existing.role_scope, new_item.role_scope),
         evidence=_merge_unique_strings(existing.evidence, new_item.evidence),
     )
@@ -508,6 +552,10 @@ def _merge_path(existing: NavigationPathObservation, new_item: NavigationPathObs
         from_screen=new_item.from_screen or existing.from_screen,
         to_screen=new_item.to_screen or existing.to_screen,
         action_summary=new_item.action_summary or existing.action_summary,
+        route_steps=_merge_unique_strings(existing.route_steps, new_item.route_steps),
+        typed_route_steps=_merge_route_steps(existing.typed_route_steps, new_item.typed_route_steps),
+        success_criteria=_merge_unique_strings(existing.success_criteria, new_item.success_criteria),
+        confidence=new_item.confidence or existing.confidence,
         evidence=_merge_unique_strings(existing.evidence, new_item.evidence),
     )
 
@@ -520,7 +568,12 @@ def _merge_validation(existing: NavigationValidationNote, new_item: NavigationVa
     )
 
 
-def merge_navigation_ontology(path: Path, delta: NavigationOntologyDelta) -> NavigationOntologyDocument:
+def merge_navigation_ontology(
+    path: Path,
+    delta: NavigationOntologyDelta,
+    *,
+    source_base_url: str | None = None,
+) -> NavigationOntologyDocument:
     document = load_navigation_ontology(path)
     document.screens = _merge_model_items(document.screens, delta.screens, _screen_key, _merge_screen)
     document.actions = _merge_model_items(document.actions, delta.actions, _action_key, _merge_action)
@@ -533,8 +586,28 @@ def merge_navigation_ontology(path: Path, delta: NavigationOntologyDelta) -> Nav
         _merge_validation,
     )
     document.open_questions = _merge_unique_strings(document.open_questions, delta.open_questions)
+    backfill_typed_route_steps(document, source_base_url=source_base_url)
     path.write_text(render_navigation_ontology(document), encoding="utf-8")
     return document
+
+
+def backfill_navigation_ontology_file(path: Path, *, source_base_url: str | None = None) -> int:
+    document = load_navigation_ontology(path)
+    added_count = backfill_typed_route_steps(document, source_base_url=source_base_url)
+    if added_count:
+        path.write_text(render_navigation_ontology(document), encoding="utf-8")
+    return added_count
+
+
+def _document_to_delta(document: NavigationOntologyDocument) -> NavigationOntologyDelta:
+    return NavigationOntologyDelta(
+        screens=document.screens,
+        actions=document.actions,
+        labels=document.labels,
+        navigation_paths=document.navigation_paths,
+        validation_notes=document.validation_notes,
+        open_questions=document.open_questions,
+    )
 
 
 def _source_workspace_dir(source_name: str, workspace_dir: str | Path | None = None) -> Path:
@@ -701,7 +774,12 @@ def finalize_navigation_run(
         backup_path = run.source_workspace_dir / f"ontology.backup.{make_run_timestamp()}.md"
         shutil.copy2(run.baseline_ontology, backup_path)
 
-    shutil.copy2(run.run_ontology, run.baseline_ontology)
+    if run.baseline_ontology.exists():
+        run_delta = _document_to_delta(load_navigation_ontology(run.run_ontology))
+        merge_navigation_ontology(run.baseline_ontology, run_delta, source_base_url=run.source.base_url)
+    else:
+        shutil.copy2(run.run_ontology, run.baseline_ontology)
+        backfill_navigation_ontology_file(run.baseline_ontology, source_base_url=run.source.base_url)
     update_manifest(run.manifest_path, status="finalized", finalized=True)
     return {
         "run_folder": run.run_dir,
@@ -726,6 +804,21 @@ def read_recent_navigation_events(run: NavigationRunContext, limit: int = 6) -> 
     for line in lines[-limit:]:
         recent.append(NavigationEventRecord.model_validate(json.loads(line)))
     return recent
+
+
+def read_navigation_events(run: NavigationRunContext) -> list[NavigationEventRecord]:
+    if not run.events_path.exists():
+        return []
+
+    events: list[NavigationEventRecord] = []
+    for line in run.events_path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            events.append(NavigationEventRecord.model_validate(json.loads(line)))
+    return events
+
+
+def next_navigation_step_index(run: NavigationRunContext) -> int:
+    return len(read_navigation_events(run)) + 1
 
 
 def save_snapshot(
@@ -883,7 +976,10 @@ def remap_snapshot_ref_target(
             break
         if fallback_match is None and descriptor in current_descriptor:
             fallback_match = candidate_ref
-    return exact_match or fallback_match
+    matched_ref = exact_match or fallback_match
+    if matched_ref is None:
+        return None
+    return f"ref={matched_ref}" if str(target or "").strip().startswith(("ref=", "[ref=")) else matched_ref
 
 
 def extract_json_payload_from_tool_message(message: str | None) -> dict[str, Any] | None:
@@ -1047,11 +1143,50 @@ class PlaywrightMcpBrowser:
         arguments: dict[str, object],
     ) -> tuple[ExecutedToolCall, str | None, object | None]:
         logger.debug("Calling MCP tool %s with args=%s", tool_name, arguments)
-        result = await self._session.call_tool(tool_name, arguments=arguments)
+        try:
+            result = await self._session.call_tool(tool_name, arguments=arguments)
+        except Exception as exc:
+            raise PlaywrightToolExecutionError(
+                tool_name=tool_name,
+                arguments=arguments,
+                message=f"{type(exc).__name__}: {exc}",
+            ) from exc
         text, structured = self._normalize_call_result(result)
-        if text and text.lstrip().startswith("### Error"):
+        if text and (text.lstrip().startswith("### Error") or is_transient_navigation_error(text)):
             raise PlaywrightToolExecutionError(tool_name=tool_name, arguments=arguments, message=text)
         return ExecutedToolCall(tool_name=tool_name, arguments=arguments, message=text), text, structured
+
+    async def _with_transient_navigation_retry(
+        self,
+        operation,
+        *,
+        purpose: str,
+        attempts: int = 3,
+        suppress_exhausted: bool = False,
+    ) -> Any | None:
+        delay_seconds = max(self._config.step_delay_ms / 1000, 0.4)
+        last_error: PlaywrightToolExecutionError | None = None
+        for attempt_index in range(attempts):
+            try:
+                if attempt_index > 0:
+                    await asyncio.sleep(delay_seconds * attempt_index)
+                return await operation()
+            except PlaywrightToolExecutionError as exc:
+                if not is_transient_navigation_error(exc.message):
+                    raise
+                last_error = exc
+                logger.debug(
+                    "Transient navigation error while %s (attempt %s/%s): %s",
+                    purpose,
+                    attempt_index + 1,
+                    attempts,
+                    exc.message,
+                )
+        if suppress_exhausted:
+            logger.debug("Suppressing exhausted transient navigation error while %s: %s", purpose, last_error)
+            return None
+        assert last_error is not None
+        raise last_error
 
     async def navigate(self, url: str) -> ExecutedToolCall:
         tool_name = self._resolve_tool_name(
@@ -1142,13 +1277,18 @@ class PlaywrightMcpBrowser:
         # produce refs that are valid for the next action.
         if include_snapshot:
             try:
-                await self.capture_snapshot()
-            except NavigationExecutionError:
+                await self._with_transient_navigation_retry(
+                    lambda: self.capture_snapshot(),
+                    purpose="capturing page-stability snapshot",
+                    suppress_exhausted=True,
+                )
+            except (NavigationExecutionError, PlaywrightToolExecutionError):
                 logger.debug("No snapshot tool exposed by the Playwright MCP server (stability pass).")
 
         try:
-            execution = await self.evaluate(
-                """() => {
+            execution = await self._with_transient_navigation_retry(
+                lambda: self.evaluate(
+                    """() => {
                     const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
                     const slugify = (value) => normalize(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
                     const visible = (element) => {
@@ -1265,8 +1405,11 @@ class PlaywrightMcpBrowser:
                         affordances,
                     });
                 }"""
+                ),
+                purpose="evaluating page evidence",
+                suppress_exhausted=True,
             )
-            if execution.message:
+            if execution is not None and execution.message:
                 parsed = extract_json_payload_from_tool_message(execution.message)
                 if isinstance(parsed, dict):
                     parsed_affordances = parsed.get("affordances") or []
@@ -1283,7 +1426,7 @@ class PlaywrightMcpBrowser:
                     )
                 else:
                     logger.debug("Could not parse page evaluation payload: %s", execution.message)
-        except NavigationExecutionError:
+        except (NavigationExecutionError, PlaywrightToolExecutionError):
             logger.debug("No evaluation tool exposed by the Playwright MCP server.")
 
         # Phase 2: ref-generating snapshot.
@@ -1292,34 +1435,60 @@ class PlaywrightMcpBrowser:
         # (including browser_evaluate) causes the MCP server to mark previous refs as stale.
         if include_snapshot:
             try:
-                snapshot = await self.capture_snapshot()
-                page.snapshot = snapshot.message
-                if page.text_excerpt is None and snapshot.message:
-                    page.text_excerpt = snapshot.message[:4000]
-                if page.page_summary is None and page.text_excerpt:
-                    page.page_summary = f"**Visible text excerpt:**\n{page.text_excerpt[:2000]}"
-            except NavigationExecutionError:
+                snapshot = await self._with_transient_navigation_retry(
+                    lambda: self.capture_snapshot(),
+                    purpose="capturing ref-generating snapshot",
+                    suppress_exhausted=True,
+                )
+                if snapshot is not None:
+                    page.snapshot = snapshot.message
+                    if page.text_excerpt is None and snapshot.message:
+                        page.text_excerpt = snapshot.message[:4000]
+                    if page.page_summary is None and page.text_excerpt:
+                        page.page_summary = f"**Visible text excerpt:**\n{page.text_excerpt[:2000]}"
+            except (NavigationExecutionError, PlaywrightToolExecutionError):
                 logger.debug("No snapshot tool exposed by the Playwright MCP server (ref pass).")
         return page
 
     async def wait_for_text(self, text: str, timeout_seconds: int = 15) -> ExecutedToolCall:
+        escaped_text = json.dumps(text)
         try:
-            tool_name = self._resolve_tool_name(
-                exact_names=("browser_wait_for", "browser_wait_for_text", "wait_for_text"),
-                contains_names=("wait",),
-                purpose="waiting for text",
+            execution = await self.evaluate(
+                f"""async () => {{
+                const expected = {escaped_text};
+                const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                const visibleText = () => normalize(document.body ? document.body.innerText || document.body.textContent || '' : '');
+                const deadline = Date.now() + {int(timeout_seconds * 1000)};
+                while (Date.now() <= deadline) {{
+                    if (visibleText().includes(expected)) {{
+                        return JSON.stringify({{
+                            visible: true,
+                            text: expected,
+                            url: window.location.href || null,
+                            title: document.title || null
+                        }});
+                    }}
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                }}
+                return JSON.stringify({{
+                    visible: false,
+                    text: expected,
+                    url: window.location.href || null,
+                    title: document.title || null
+                }});
+            }}"""
             )
-            arguments = self._prepare_arguments(
-                tool_name,
-                [
-                    (("text", "value"), text),
-                    (("time", "timeout", "timeoutMs"), timeout_seconds),
-                ],
-            )
-            execution, _, _ = await self._call_tool(tool_name, arguments)
-            return execution
-        except NavigationExecutionError:
-            pass
+        except (NavigationExecutionError, PlaywrightToolExecutionError):
+            logger.debug("Evaluate-based text wait unavailable; falling back to page evidence polling.")
+        else:
+            parsed = extract_json_payload_from_tool_message(execution.message)
+            if parsed and parsed.get("visible") is True:
+                return ExecutedToolCall(
+                    tool_name=execution.tool_name,
+                    arguments=execution.arguments,
+                    message=f"Observed text '{text}' in page evidence.",
+                )
+            raise NavigationExecutionError(f"Timed out while waiting for text '{text}'.")
 
         deadline = asyncio.get_running_loop().time() + timeout_seconds
         while asyncio.get_running_loop().time() < deadline:
@@ -1331,7 +1500,7 @@ class PlaywrightMcpBrowser:
                     arguments={"text": text, "timeout_seconds": timeout_seconds},
                     message=f"Observed text '{text}' in page evidence.",
                 )
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.25)
 
         raise NavigationExecutionError(f"Timed out while waiting for text '{text}'.")
 
@@ -1521,6 +1690,116 @@ def resolve_role_credential(source: NavigationSourceConfig, role: str, field_nam
     if field_name == "password":
         return credentials.password
     raise ValueError(f"Unsupported credential field '{field_name}'.")
+
+
+def normalize_navigation_target(target: str | None) -> str | None:
+    if target is None:
+        return None
+    normalized = target.strip()
+    if normalized.startswith("[ref=") and normalized.endswith("]"):
+        normalized = normalized[1:-1]
+    if normalized.startswith("[ref:") and normalized.endswith("]"):
+        normalized = "ref=" + normalized[5:-1]
+    if normalized.startswith("ref="):
+        return normalized
+    if normalized.startswith("ref:"):
+        ref_value = normalized.split(":", 1)[1].strip()
+        return f"ref={ref_value}" if ref_value else None
+    return normalized
+
+
+def is_snapshot_ref_target(target: str | None) -> bool:
+    if target is None:
+        return False
+    return re.fullmatch(r"(?:ref=)?(?:[a-z]\d+)*e\d+", target) is not None
+
+
+def is_direct_execution_target(target: str | None) -> bool:
+    if target is None:
+        return False
+    return (
+        target.startswith(("#", ".", "a[", "button", "input", "textarea", "select", "["))
+        or ":has-text(" in target
+        or is_snapshot_ref_target(target)
+    )
+
+
+def resolve_affordance_target(target: str | None, *, current_page: NavigationPageEvidence | None) -> str | None:
+    if target is None or is_direct_execution_target(target) or current_page is None:
+        return target
+
+    affordances = current_page.affordances
+    if not affordances:
+        return target
+
+    for affordance in affordances:
+        if affordance.key == target:
+            return affordance.selector or (f'a[href="{affordance.href}"]' if affordance.href else None) or target
+
+    lowered_target = target.lower()
+    for affordance in affordances:
+        label = (affordance.label or "").lower()
+        if lowered_target == label or lowered_target in label:
+            return affordance.selector or (f'a[href="{affordance.href}"]' if affordance.href else None) or affordance.key
+
+    return target
+
+
+def login_selector_target(action: ExplorationAction, *, current_page: NavigationPageEvidence | None) -> str | None:
+    current_url = (current_page.url or "").lower() if current_page else ""
+    snapshot = current_page.snapshot or "" if current_page else ""
+    if "/login" not in current_url and "Aanmelden op Clearfacts" not in snapshot:
+        return None
+
+    if action.action_type == ExplorationActionType.TYPE_ROLE_CREDENTIAL and action.credential_field is not None:
+        if action.credential_field.value == "username":
+            return "#username"
+        if action.credential_field.value == "password":
+            return "#password"
+    if action.action_type == ExplorationActionType.CLICK:
+        target = action.target or ""
+        summary_text = " ".join(filter(None, [action.summary, action.expected_outcome, target]))
+        if "Aanmelden" in summary_text or "_submit" in target:
+            return "#_submit"
+    return None
+
+
+def prepare_navigation_action_target(
+    action: ExplorationAction,
+    *,
+    current_page: NavigationPageEvidence | None,
+) -> ExplorationAction:
+    prepared_action = action.model_copy(deep=True)
+    prepared_action.target = normalize_navigation_target(prepared_action.target)
+
+    login_target = login_selector_target(prepared_action, current_page=current_page)
+    if login_target is not None:
+        prepared_action.target = login_target
+        return prepared_action
+
+    resolved_target = resolve_affordance_target(prepared_action.target, current_page=current_page)
+    if resolved_target is not None:
+        prepared_action.target = resolved_target
+    return prepared_action
+
+
+def should_type_slowly(action: ExplorationAction) -> bool:
+    target = action.target or ""
+    return target in {"#username", "#password"} or target.startswith("input:")
+
+
+def should_retry_stale_ref(*, action: ExplorationAction, error: PlaywrightToolExecutionError) -> bool:
+    if action.target is None or not is_snapshot_ref_target(action.target):
+        return False
+    if action.action_type not in {
+        ExplorationActionType.CLICK,
+        ExplorationActionType.TYPE_TEXT,
+        ExplorationActionType.TYPE_ROLE_CREDENTIAL,
+        ExplorationActionType.PRESS_KEY,
+    }:
+        return False
+    normalized = error.message.lower()
+    return "ref " in normalized and "not found" in normalized
 
 
 def event_record(

@@ -7,7 +7,7 @@ class AvailableSourceOntology(BaseModel):
     source_name: str = Field(description="Stable source identifier used in the workspace folder name.")
     source_type: str | None = Field(default=None, description="Source type from ontology metadata if available.")
     status: str | None = Field(default=None, description="Ontology processing status from ontology metadata if available.")
-    ontology_path: str = Field(description="Absolute path to the finalized ontology.md file.")
+    ontology_path: str = Field(description="Absolute path to the source-level ontology.md file.")
 
 
 class SourceOntologyDocument(BaseModel):
@@ -18,7 +18,7 @@ class SourceOntologyDocument(BaseModel):
 
 
 class SourceOntologyQueryInput(BaseModel):
-    source_name: str = Field(description="Selected finalized source identifier.")
+    source_name: str = Field(description="Selected source identifier.")
     question: str = Field(description="User question about the selected source ontology.")
 
 

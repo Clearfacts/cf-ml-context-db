@@ -8,15 +8,37 @@ Apply these instructions when creating or updating LangChain-based agents, subag
 - Use explicit typed input and output models at agent boundaries.
 - Keep business rules in code, schemas, validators, and tools. Do not rely on prompt text alone for behavior that must be enforced.
 
-### DeepAgents and structured output
+### Typed tool boundaries, subagents, and structured output
 
-- When using DeepAgents together with structured output, prefer `CompiledSubAgent`.
-- Give each subagent a stable name and a precise description of:
+- Use structured output for model response shape. This does not enforce the shape of coordinator-to-subagent delegation text.
+- For schema-critical orchestration paths, prefer typed LangChain tools with Pydantic `args_schema` wrappers around the underlying service or analyzer.
+- Use DeepAgents `CompiledSubAgent` only when natural-language delegation is acceptable or when the subagent has its own robust input validation/fallback policy.
+- Give each tool or subagent a stable name and a precise description of:
   - what input it accepts
   - any size limits or batching rules
   - what output shape it returns
 
-Example:
+Example typed tool wrapper:
+
+```python
+from langchain_core.tools import StructuredTool
+
+
+def classify_batch(**kwargs: object) -> str:
+    query = GPCBatchTaxonomyRequest.model_validate(kwargs)
+    result = self.gpc_batch_agent.invoke(query)
+    return result.model_dump_json()
+
+
+classify_batch_tool = StructuredTool.from_function(
+    func=classify_batch,
+    name="classify_gpc_batch",
+    description="Classify a batch of similar invoice lines. Input must match GPCBatchTaxonomyRequest.",
+    args_schema=GPCBatchTaxonomyRequest,
+)
+```
+
+Example DeepAgents subagent for non-critical delegation:
 
 ```python
 AGENT_NAME = "gpc_batch_taxonomy_agent"

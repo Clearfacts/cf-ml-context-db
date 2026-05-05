@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from context_db.agents.clearfacts_navigation_agent.agents import ClearfactsNavigationAgent
 from context_db.agents.clearfacts_navigation_agent.schemas import CredentialField, ExplorationAction, ExplorationActionType
@@ -20,11 +21,14 @@ from context_db.agents.clearfacts_navigation_agent.schemas import (
     PlaywrightMcpServerConfig,
 )
 from context_db.agents.clearfacts_navigation_agent.tools import (
+    ExecutedToolCall,
     PlaywrightMcpBrowser,
+    PlaywrightToolExecutionError,
     _run_async_blocking,
     build_human_readable_page_summary,
     build_playwright_mcp_args,
     extract_json_payload_from_tool_message,
+    finalize_navigation_run,
     load_navigation_ontology,
     load_navigation_source,
     merge_navigation_ontology,
@@ -135,6 +139,99 @@ class ClearfactsNavigationToolsTest(unittest.TestCase):
             self.assertEqual(len(ontology.navigation_paths), 1)
             self.assertEqual(len(ontology.validation_notes), 1)
             self.assertEqual(ontology.open_questions, ["Which page does sme_admin land on after login?"])
+
+    def test_merge_navigation_ontology_backfills_typed_route_steps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            run = setup_navigation_run(
+                "navigation_agent_clearfacts",
+                workspace_dir=tmp_dir,
+                timestamp="20260430_220500",
+            )
+            merge_navigation_ontology(
+                run.run_ontology,
+                NavigationOntologyDelta(
+                    navigation_paths=[
+                        NavigationPathObservation(
+                            description="Authenticate from the Login page to reach the role-specific Dashboard.",
+                            from_screen="Login page",
+                            to_screen="Dashboard",
+                            action_summary="Fill credentials and submit.",
+                            route_steps=[
+                                "Go to /login",
+                                "Type valid Gebruikersnaam into #username",
+                                "Type valid Wachtwoord into #password",
+                                "Click Aanmelden (#_submit)",
+                            ],
+                            success_criteria=["Dashboard heading visible (e.g., Bedrijfsresultaat per boekperiode)"],
+                        )
+                    ]
+                ),
+                source_base_url="https://staging.acc.clearfacts.be",
+            )
+
+            ontology = load_navigation_ontology(run.run_ontology)
+            typed_steps = ontology.navigation_paths[0].typed_route_steps
+
+        self.assertEqual(
+            [step.operation for step in typed_steps],
+            [
+                ExplorationActionType.NAVIGATE_URL,
+                ExplorationActionType.TYPE_ROLE_CREDENTIAL,
+                ExplorationActionType.TYPE_ROLE_CREDENTIAL,
+                ExplorationActionType.CLICK,
+                ExplorationActionType.WAIT_FOR_TEXT,
+            ],
+        )
+        self.assertEqual(typed_steps[0].url, "https://staging.acc.clearfacts.be/login")
+        self.assertEqual(typed_steps[1].credential_field, CredentialField.USERNAME)
+        self.assertEqual(typed_steps[2].credential_field, CredentialField.PASSWORD)
+        self.assertEqual(typed_steps[3].target, "#_submit")
+        self.assertEqual(typed_steps[4].text, "Bedrijfsresultaat per boekperiode")
+
+    def test_finalize_navigation_run_merges_run_ontology_into_source_ontology(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            run = setup_navigation_run(
+                "navigation_agent_clearfacts",
+                workspace_dir=tmp_dir,
+                timestamp="20260430_221000",
+            )
+            merge_navigation_ontology(
+                run.baseline_ontology,
+                NavigationOntologyDelta(
+                    screens=[
+                        NavigationScreenObservation(
+                            name="Existing source screen",
+                            url="https://example.test/existing",
+                            title="Existing",
+                            description="Existing source-level observation.",
+                        )
+                    ]
+                ),
+            )
+            merge_navigation_ontology(
+                run.run_ontology,
+                NavigationOntologyDelta(
+                    screens=[
+                        NavigationScreenObservation(
+                            name="Run-discovered screen",
+                            url="https://example.test/run",
+                            title="Run",
+                            description="Observation discovered in one navigation run.",
+                        )
+                    ]
+                ),
+            )
+
+            finalize_navigation_run(
+                "navigation_agent_clearfacts",
+                workspace_dir=tmp_dir,
+                timestamp="20260430_221000",
+            )
+
+            source_ontology = load_navigation_ontology(run.baseline_ontology)
+            screen_names = {screen.name for screen in source_ontology.screens}
+            self.assertIn("Existing source screen", screen_names)
+            self.assertIn("Run-discovered screen", screen_names)
 
     def test_prepare_arguments_prefers_target_for_current_playwright_tools(self) -> None:
         browser = PlaywrightMcpBrowser(PlaywrightMcpServerConfig(command="npx"))
@@ -344,6 +441,97 @@ await page.evaluate('...');
 
 
 class ClearfactsNavigationAsyncBridgeTest(unittest.IsolatedAsyncioTestCase):
+    async def test_inspect_page_does_not_sleep_for_configured_step_delay(self) -> None:
+        browser = PlaywrightMcpBrowser(PlaywrightMcpServerConfig(command="npx", step_delay_ms=500))
+
+        async def fail_sleep(_seconds):
+            raise AssertionError("inspect_page should not sleep without a transient navigation error.")
+
+        async def fake_evaluate(function_text, target=None):
+            return ExecutedToolCall(
+                tool_name="browser_evaluate",
+                arguments={},
+                message=(
+                    '### Result\n'
+                    '"{\\"url\\": \\"https://example.test/dashboard\\", '
+                    '\\"title\\": \\"Dashboard\\", '
+                    '\\"affordances\\": []}"'
+                ),
+            )
+
+        browser.evaluate = fake_evaluate
+
+        with patch("context_db.agents.clearfacts_navigation_agent.tools.asyncio.sleep", new=fail_sleep):
+            page = await browser.inspect_page(include_snapshot=False)
+
+        self.assertEqual(page.url, "https://example.test/dashboard")
+        self.assertEqual(page.title, "Dashboard")
+
+    async def test_wait_for_text_uses_evaluate_based_condition_wait(self) -> None:
+        browser = PlaywrightMcpBrowser(PlaywrightMcpServerConfig(command="npx"))
+        calls = []
+
+        async def fake_evaluate(function_text, target=None):
+            calls.append(function_text)
+            return ExecutedToolCall(
+                tool_name="browser_evaluate",
+                arguments={"function": function_text},
+                message=(
+                    '### Result\n'
+                    '"{\\"visible\\": true, '
+                    '\\"text\\": \\"Bedrijfsresultaat per boekperiode\\", '
+                    '\\"url\\": \\"https://example.test/dashboard\\", '
+                    '\\"title\\": \\"Dashboard\\"}"'
+                ),
+            )
+
+        browser.evaluate = fake_evaluate
+
+        execution = await browser.wait_for_text("Bedrijfsresultaat per boekperiode")
+
+        self.assertEqual(execution.tool_name, "browser_evaluate")
+        self.assertEqual(execution.message, "Observed text 'Bedrijfsresultaat per boekperiode' in page evidence.")
+        self.assertEqual(len(calls), 1)
+
+    async def test_inspect_page_retries_transient_navigation_errors(self) -> None:
+        browser = PlaywrightMcpBrowser(PlaywrightMcpServerConfig(command="npx", step_delay_ms=0))
+        calls = {"evaluate": 0}
+
+        async def fake_snapshot(target=None):
+            return ExecutedToolCall(
+                tool_name="browser_snapshot",
+                arguments={},
+                message='- heading "Purchase inbox" [ref=e1]',
+            )
+
+        async def fake_evaluate(function_text, target=None):
+            calls["evaluate"] += 1
+            if calls["evaluate"] == 1:
+                raise PlaywrightToolExecutionError(
+                    tool_name="browser_evaluate",
+                    arguments={},
+                    message="Error: browserBackend.callTool: Execution context was destroyed, most likely because of a navigation",
+                )
+            return ExecutedToolCall(
+                tool_name="browser_evaluate",
+                arguments={},
+                message=(
+                    '### Result\n'
+                    '"{\\"url\\": \\"https://example.test/inbox\\", '
+                    '\\"title\\": \\"Purchase inbox\\", '
+                    '\\"affordances\\": []}"'
+                ),
+            )
+
+        browser.capture_snapshot = fake_snapshot
+        browser.evaluate = fake_evaluate
+
+        page = await browser.inspect_page(include_snapshot=True)
+
+        self.assertEqual(calls["evaluate"], 2)
+        self.assertEqual(page.url, "https://example.test/inbox")
+        self.assertEqual(page.title, "Purchase inbox")
+
     async def test_run_async_blocking_works_inside_running_event_loop(self) -> None:
         async def sample_coroutine() -> str:
             await asyncio.sleep(0)

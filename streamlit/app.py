@@ -16,7 +16,13 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st
 
 from context_db.agents.clearfacts_navigation_deepagent import ClearfactsNavigationDeepAgent
-from context_db.agents.clearfacts_navigation_deepagent.schemas import ClearfactsNavigationDeepAgentRequest
+from context_db.agents.clearfacts_navigation_deepagent.model_config import (
+    available_navigation_agent_model_profiles,
+)
+from context_db.agents.clearfacts_navigation_deepagent.schemas import (
+    ClearfactsNavigationDeepAgentRequest,
+    ClearfactsNavigationOntologyUpdateRequest,
+)
 from context_db.agents.clearfacts_navigation_agent.tools import (
     PersistentPlaywrightBrowserSession,
     SOURCES_DIR,
@@ -37,8 +43,8 @@ DEFAULT_MAX_ITERATIONS = 6
 
 
 @st.cache_resource
-def get_navigation_deepagent() -> ClearfactsNavigationDeepAgent:
-    return ClearfactsNavigationDeepAgent()
+def get_navigation_deepagent(model_profile: str) -> ClearfactsNavigationDeepAgent:
+    return ClearfactsNavigationDeepAgent(model_profile=model_profile)
 
 
 @st.cache_resource
@@ -54,6 +60,10 @@ def list_navigation_sources() -> list:
         except Exception:
             continue
     return sources
+
+
+def list_navigation_model_profiles() -> list[str]:
+    return available_navigation_agent_model_profiles()
 
 
 def _format_navigation_source_label(source) -> str:
@@ -82,6 +92,7 @@ def init_session_state() -> None:
         "nav_history": [],
         "nav_last_result": None,
         "nav_last_error": None,
+        "nav_last_ontology_update": None,
         "nav_max_iterations": DEFAULT_MAX_ITERATIONS,
         "nav_include_snapshot": True,
         "nav_browser_session": None,
@@ -102,6 +113,7 @@ def reset_navigation_session() -> None:
         "nav_history",
         "nav_last_result",
         "nav_last_error",
+        "nav_last_ontology_update",
     ]:
         if key == "nav_history":
             st.session_state[key] = []
@@ -297,6 +309,11 @@ def render_navigation_sidebar(selected_source, effective_role: str | None) -> No
     trace_references = last_result.get("trace_references") or []
     if trace_references:
         st.sidebar.markdown(f"**Trace artifacts:** `{len(trace_references)}`")
+    last_ontology_update = st.session_state.get("nav_last_ontology_update") or {}
+    if last_ontology_update:
+        st.sidebar.markdown(f"**Last ontology update:** `{last_ontology_update.get('status', 'unknown')}`")
+        if last_ontology_update.get("summary"):
+            st.sidebar.caption(last_ontology_update["summary"][:300])
 
     last_url = manifest.get("last_observed_url")
     last_title = manifest.get("last_observed_title")
@@ -346,6 +363,20 @@ def render_navigation_tab() -> None:
 
     selected_source = source_lookup[st.session_state["nav_selected_source"]]
     sync_navigation_selection(selected_source)
+
+    model_profiles = list_navigation_model_profiles()
+    current_model_profile = st.session_state.get("nav_model_profile", model_profiles[0])
+    if current_model_profile not in model_profiles:
+        current_model_profile = model_profiles[0]
+        st.session_state["nav_model_profile"] = current_model_profile
+    st.sidebar.selectbox(
+        "Model profile",
+        options=model_profiles,
+        index=model_profiles.index(current_model_profile),
+        key="nav_model_profile",
+        help="Non-secret runtime policy for which registered model each navigation agent role uses.",
+    )
+    selected_model_profile = st.session_state["nav_model_profile"]
 
     role_options = ["__default__"] + selected_source.available_roles
     current_role = st.session_state.get("nav_role_selection", "__default__")
@@ -411,6 +442,29 @@ def render_navigation_tab() -> None:
 
     render_navigation_sidebar(selected_source, effective_role)
 
+    candidate_timestamp = st.session_state.get("nav_active_run_timestamp") or st.session_state.get(
+        "nav_resume_run_timestamp_input",
+        "",
+    ).strip()
+    if st.sidebar.button("Update ontology", use_container_width=True):
+        if not candidate_timestamp:
+            st.sidebar.warning("No active run to analyze yet.")
+        else:
+            try:
+                with st.spinner("Updating ontology from collected evidence..."):
+                    update_result = get_navigation_deepagent(selected_model_profile).update_ontology(
+                        ClearfactsNavigationOntologyUpdateRequest(
+                            source_name=selected_source.source_name,
+                            run_timestamp=candidate_timestamp,
+                            role=effective_role,
+                            instruction="Streamlit checkpoint ontology update.",
+                        )
+                    )
+                st.session_state["nav_last_ontology_update"] = update_result.model_dump(mode="json")
+                st.rerun()
+            except Exception as exc:
+                st.sidebar.error(f"Could not update ontology: {exc}")
+
     if st.session_state.get("nav_last_error"):
         st.error(st.session_state["nav_last_error"])
 
@@ -442,7 +496,7 @@ def render_navigation_tab() -> None:
                     execution_max_iterations=int(st.session_state["nav_max_iterations"]),
                     include_snapshot=bool(st.session_state["nav_include_snapshot"]),
                 )
-                result = get_navigation_deepagent().invoke(request, browser=browser_session)
+                result = get_navigation_deepagent(selected_model_profile).invoke(request, browser=browser_session)
                 result_payload = result.model_dump(mode="json")
                 render_navigation_result(result_payload)
     except Exception as exc:
@@ -460,11 +514,11 @@ def render_navigation_tab() -> None:
 
 def render_ontology_query_tab() -> None:
     st.title("Source ontology query")
-    st.caption("Ask a question about one finalized source ontology at a time.")
+    st.caption("Ask a question about one source-level ontology at a time.")
 
     sources = list_available_source_ontologies()
     if not sources:
-        st.warning("No finalized source ontologies were found under workspace/*/ontology.md.")
+        st.warning("No source-level ontologies were found under workspace/*/ontology.md.")
         return
 
     source_lookup = {source.source_name: source for source in sources}

@@ -1,0 +1,46 @@
+default_profile: balanced
+
+profiles:
+  balanced:
+    coordinator:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 4000
+    route_planner:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 3000
+    goal_assessor:
+      model_name: gpt-5-nano-2025-08-07
+      max_tokens: 1500
+    recovery:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 3000
+    validation:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 3000
+    ontology_batch_analyzer:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 4000
+      reasoning:
+        effort: low
+
+  quality:
+    coordinator:
+      model_name: gpt-5-2025-08-07
+      max_tokens: 4000
+    route_planner:
+      model_name: gpt-5-2025-08-07
+      max_tokens: 4000
+    goal_assessor:
+      model_name: gpt-5-mini-2025-08-07
+      max_tokens: 2000
+    recovery:
+      model_name: gpt-5-2025-08-07
+      max_tokens: 4000
+    validation:
+      model_name: gpt-5-2025-08-07
+      max_tokens: 4000
+    ontology_batch_analyzer:
+      model_name: gpt-5-2025-08-07
+      max_tokens: 4000
+      reasoning:
+        effort: low

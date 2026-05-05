@@ -12,7 +12,7 @@ from langchain_core.messages import BaseMessage
 from context_db.agents.clearfacts_navigation_agent.schemas import ClearfactsNavigationResult
 from context_db.agents.clearfacts_navigation_agent.tools import NavigationRunContext
 
-from .schemas import DeepAgentTraceReference, NavigationExecutionTaskInput, NavigationExecutionTaskOutput
+from .schemas import DeepAgentTraceReference, NavigationExecutionTaskOutput, RoutePlanningTaskInput
 
 
 TRACE_DIRNAME = "deepagent_traces"
@@ -85,9 +85,15 @@ def build_trace_references(run: NavigationRunContext) -> list[DeepAgentTraceRefe
     trace_dir = ensure_trace_dir(run)
     references: list[DeepAgentTraceReference] = []
     for trace_path in sorted(trace_dir.glob("*.json")):
-        parts = trace_path.stem.split("_", 3)
-        trace_kind = parts[-1] if parts else "trace"
-        agent_name = parts[-2] if len(parts) >= 2 else "unknown"
+        agent_name = "unknown"
+        trace_kind = "trace"
+        try:
+            payload = json.loads(trace_path.read_text(encoding="utf-8"))
+            agent_name = str(payload.get("agent_name") or agent_name)
+            trace_kind = str(payload.get("trace_kind") or trace_kind)
+        except (OSError, json.JSONDecodeError):
+            logger_name = trace_path.stem.split("_", 3)[-1] if "_" in trace_path.stem else trace_path.stem
+            agent_name = logger_name or agent_name
         references.append(
             DeepAgentTraceReference(
                 agent_name=agent_name,
@@ -130,46 +136,94 @@ def parse_subagent_task_input(text: str, schema: type[Any]) -> Any:
     return schema.model_validate(extract_json_object(text))
 
 
-import logging as _logging
+def _unquote_label_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized[0:1] in {"'", '"'}:
+        quote = normalized[0]
+        end_index = normalized.find(quote, 1)
+        if end_index > 0:
+            normalized = normalized[1:end_index]
+    return normalized.strip() or None
 
-_logger = _logging.getLogger(__name__)
+
+def _extract_labeled_value(text: str, *labels: str) -> str | None:
+    for label in labels:
+        label_pattern = re.escape(label).replace(r"\ ", r"[\s_-]+")
+        match = re.search(rf"(?im)^\s*(?:[-*]\s*)?{label_pattern}\s*:\s*(.+?)\s*$", text)
+        if match:
+            return _unquote_label_value(match.group(1))
+    return None
 
 
-def parse_nl_execution_task_input(text: str) -> NavigationExecutionTaskInput:
-    """Fallback: extract NavigationExecutionTaskInput from natural-language coordinator output.
+def _extract_run_timestamp(text: str) -> str | None:
+    labeled = _extract_labeled_value(text, "run_timestamp", "run timestamp", "timestamp", "run id", "run_id")
+    if labeled:
+        match = re.search(r"\b\d{8}_\d{6}\b", labeled)
+        return match.group(0) if match else labeled
+    match = re.search(r"\b\d{8}_\d{6}\b", text)
+    return match.group(0) if match else None
 
-    The coordinator sometimes produces a prose description instead of a JSON payload.
-    This parser handles the expected natural-language field labels so the subagent can
-    proceed without losing the run context.
-    """
-    source_match = re.search(r"Source:\s*([^\s(]+)", text)
-    role_match = re.search(r"(?:Default role|role):\s*([^\s(,]+)", text, re.IGNORECASE)
-    timestamp_match = re.search(r"Run timestamp:\s*(\S+)", text, re.IGNORECASE)
-    goal_match = re.search(
-        r"Goal:\s*(.*?)(?=\n\s*\n|\nInstructions\s+to\s+execute|\Z)",
+
+def parse_route_planner_task_input(
+    text: str,
+    *,
+    default_source_name: str | None = None,
+    default_run_timestamp: str | None = None,
+    default_user_goal: str | None = None,
+) -> RoutePlanningTaskInput:
+    try:
+        return parse_subagent_task_input(text, RoutePlanningTaskInput)
+    except ValueError:
+        pass
+
+    source_name = _extract_labeled_value(text, "source_name", "source name", "source") or default_source_name
+    user_goal = _extract_labeled_value(
         text,
-        re.DOTALL | re.IGNORECASE,
-    )
+        "user_goal",
+        "user goal",
+        "goal",
+        "objective",
+        "user request",
+        "request",
+    ) or default_user_goal
+    run_timestamp = _extract_run_timestamp(text) or default_run_timestamp
+    role = _extract_labeled_value(text, "role", "active role")
+    if role is not None and role.lower().startswith(("null", "none")):
+        role = None
 
-    source_name = source_match.group(1).strip() if source_match else "navigation_agent_clearfacts"
-    role = role_match.group(1).strip() if role_match else None
-    run_timestamp = timestamp_match.group(1).strip() if timestamp_match else None
-    instruction = goal_match.group(1).strip() if goal_match else text.strip()
-
-    _logger.warning(
-        "navigation-executor received natural-language task description instead of JSON; "
-        "extracted source=%s role=%s timestamp=%s instruction=%.120s",
-        source_name,
-        role,
-        run_timestamp,
-        instruction,
+    ontology_match = re.search(
+        r"(?is)current_ontology_yaml\s*:\s*\|?\s*(.*?)(?=\n\s*current_page\s*:|\n\s*output\s*:|\Z)",
+        text,
     )
-    return NavigationExecutionTaskInput(
+    current_ontology_yaml = ontology_match.group(1).strip() if ontology_match else ""
+
+    missing = [
+        field_name
+        for field_name, value in {
+            "source_name": source_name,
+            "user_goal": user_goal,
+        }.items()
+        if not value
+    ]
+    if missing:
+        raise ValueError(
+            "Route planner task must be JSON or include labeled fields: "
+            f"{', '.join(missing)} missing."
+        )
+
+    return RoutePlanningTaskInput(
         source_name=source_name,
+        user_goal=user_goal,
         role=role,
         run_timestamp=run_timestamp,
-        instruction=instruction,
+        current_ontology_yaml=current_ontology_yaml,
+        current_page=None,
     )
+
 
 def build_execution_result_yaml(result: NavigationExecutionTaskOutput | ClearfactsNavigationResult) -> str:
     if hasattr(result, "model_dump"):

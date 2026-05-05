@@ -29,11 +29,12 @@
 - Run `streamlit run streamlit/app.py` to start the Streamlit app.
 - The app now includes:
   - an **Explore app** tab for interactive Clearfacts navigation and mapping
-  - an **Ontology query** tab for the existing finalized-source ontology queries
-  - the exploration tab now uses the **DeepAgents navigation coordinator**, which orchestrates the existing Clearfacts navigation runtime
+  - an **Ontology query** tab for the existing source-level ontology queries
+  - the exploration tab uses the **DeepAgents navigation coordinator** with typed browser operations over Playwright MCP
   - the exploration tab uses the navigation source configuration, which now launches Chrome in headed mode by default so you can follow along
   - the exploration tab keeps a live Playwright MCP browser session open for the active run until you explicitly close it or start a different run
   - the exploration tab surfaces persisted DeepAgents trace artifacts alongside the latest execution evidence
+  - the exploration tab includes an explicit **Update ontology** action that analyzes collected run evidence in batch
 
 ## Clearfacts navigation agent
 - The interactive Clearfacts exploration agent lives in `context_db/agents/clearfacts_navigation_agent/`.
@@ -48,8 +49,11 @@
   - `logs/`
   - `browser_profile/`
 - DeepAgents coordinator and subagent traces are persisted under `logs/deepagent_traces/`.
+- The coordinator now has a deterministic `execute_cached_route` tool. It tries high-confidence ontology navigation paths before exploratory browser operations, can execute legacy text route steps or typed route steps, and returns `partial` when only part of a goal is cached.
+- Live navigation collects events, snapshots, and affordances only. `update_ontology(...)` merges the batch analyzer delta into both the run-local `ontology.md` and the source-level `workspace/<source_name>/ontology.md`; it does not update after every browser step.
 - `ClearfactsNavigationDeepAgent` now exposes both:
   - `invoke(...)` for interactive navigation/exploration
+  - `update_ontology(...)` for checkpoint/batch ontology updates from collected run evidence
   - `validate(...)` for validator-driven claim/procedure replay that returns `supports`, `contradicts`, or `inconclusive` with observed evidence
 - The ontology remains markdown and is extended with structured sections for:
   - exploration targets
@@ -60,7 +64,7 @@
   - validation notes
   - open questions
 - Use `agents/navigation_agent/setup_run.py` to create a run explicitly, or let the agent create one on first invocation.
-- Use `agents/navigation_agent/finalize_run.py` to promote a run-local ontology to the baseline source ontology.
+- Use `agents/navigation_agent/finalize_run.py` to merge a run-local ontology into the source-level ontology when you need to promote an older run manually.
 - Example CLI invocation:
 
 ```bash

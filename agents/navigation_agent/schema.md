@@ -8,7 +8,7 @@ The interactive navigation agent extends `ontology.md` with these sections:
 
 2. `Screens`
    - discovered pages/screens
-   - includes name, URL/title when known, purpose, labels, role scope, and evidence
+   - includes name, URL/title when known, purpose, optional user help summary, navigation hints, labels, role scope, and evidence
 
 3. `Actions`
    - visible user actions or affordances
@@ -20,7 +20,8 @@ The interactive navigation agent extends `ontology.md` with these sections:
 
 5. `Navigation Paths`
    - observed paths between screens
-   - includes origin, destination, action summary, and evidence
+   - includes origin, destination, action summary, reusable route steps, optional executable `typed_route_steps`, success criteria, confidence, and evidence
+   - `typed_route_steps` are used by the deterministic navigation cache and should never contain raw credential values
 
 6. `Validation Notes`
    - uncertainty, warnings, blocked points, and follow-up notes

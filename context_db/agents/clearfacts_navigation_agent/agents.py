@@ -34,7 +34,6 @@ from .tools import (
     event_record,
     load_navigation_ontology,
     load_navigation_source,
-    merge_navigation_ontology,
     prepare_playwright_run_config,
     read_recent_navigation_events,
     remap_snapshot_ref_target,
@@ -132,12 +131,19 @@ class ClearfactsNavigationAgent:
             evidence_token = f"event:{step_index:02d}:observation"
             annotated_delta = self._annotate_ontology_delta(decision.ontology_update, evidence_token)
             if self._delta_has_content(annotated_delta):
-                merge_navigation_ontology(run.run_ontology, annotated_delta)
+                delta_log = run.logs_dir / f"step_{step_index:02d}_ontology_suggestion.json"
+                delta_log.write_text(
+                    json.dumps(annotated_delta.model_dump(mode="json"), indent=2, ensure_ascii=True) + "\n",
+                    encoding="utf-8",
+                )
                 ontology_event = event_record(
                     step_index=step_index,
-                    phase="ontology",
-                    status="updated",
-                    message="Merged ontology updates from the latest exploration decision.",
+                    phase="ontology_suggestion",
+                    status="deferred",
+                    message=(
+                        "Captured ontology update suggestions from the latest exploration decision. "
+                        "Run the batch ontology updater to merge grounded observations."
+                    ),
                     page=current_page,
                 )
                 append_navigation_event(run, ontology_event)
@@ -451,18 +457,19 @@ class ClearfactsNavigationAgent:
         if normalized.startswith("[ref=") and normalized.endswith("]"):
             normalized = normalized[1:-1]
         if normalized.startswith("[ref:") and normalized.endswith("]"):
-            normalized = normalized[1:-1]
+            normalized = "ref=" + normalized[5:-1]
         if normalized.startswith("ref="):
-            return normalized.split("=", 1)[1].strip() or None
+            return normalized
         if normalized.startswith("ref:"):
-            return normalized.split(":", 1)[1].strip() or None
+            ref_value = normalized.split(":", 1)[1].strip()
+            return f"ref={ref_value}" if ref_value else None
         return normalized
 
     @staticmethod
     def _is_snapshot_ref_target(target: str | None) -> bool:
         if target is None:
             return False
-        return re.fullmatch(r"(?:[a-z]\d+)*e\d+", target) is not None
+        return re.fullmatch(r"(?:ref=)?(?:[a-z]\d+)*e\d+", target) is not None
 
     @staticmethod
     def _is_direct_execution_target(target: str | None) -> bool:

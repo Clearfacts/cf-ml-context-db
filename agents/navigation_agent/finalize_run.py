@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Promote a navigation run ontology to baseline."""
+"""Merge a navigation run ontology into the source-level ontology."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from context_db.agents.clearfacts_navigation_agent.tools import finalize_navigat
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Finalize a navigation run by copying "
+            "Finalize a navigation run by merging "
             "workspace/<source_name>/navigation_agent/<timestamp>/ontology.md "
-            "to workspace/<source_name>/ontology.md"
+            "into workspace/<source_name>/ontology.md"
         )
     )
     parser.add_argument(
@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backup",
         action="store_true",
-        help="Create a backup copy of baseline ontology before overwrite",
+        help="Create a backup copy of the source-level ontology before merge",
     )
     return parser.parse_args()
 

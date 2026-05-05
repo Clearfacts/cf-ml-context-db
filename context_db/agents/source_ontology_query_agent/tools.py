@@ -74,19 +74,19 @@ def load_source_ontology(source_name: str, workspace_dir: str | Path | None = No
                 total_lines=len(ontology_text.splitlines()),
             )
 
-    raise ValueError(f"Unknown finalized source ontology: {source_name}")
+    raise ValueError(f"Unknown source-level ontology: {source_name}")
 
 
 @tool("list_available_source_ontologies")
 def list_available_source_ontologies_tool() -> str:
-    """List finalized source ontologies that can be queried."""
+    """List source-level ontologies that can be queried."""
     payload = [source.model_dump() for source in list_available_source_ontologies()]
     return yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
 
 
 @tool("read_selected_source_ontology")
 def read_selected_source_ontology_tool(source_name: str) -> str:
-    """Read one finalized source ontology by source name."""
+    """Read one source-level ontology by source name."""
     document = load_source_ontology(source_name)
     payload = {
         "source": document.source.model_dump(),

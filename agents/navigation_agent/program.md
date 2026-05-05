@@ -4,7 +4,7 @@
 
 This document defines the controlled runtime model for the interactive Clearfacts navigation agent.
 
-The navigation agent explores a declared web application source step by step, uses Playwright MCP to inspect and act on the UI, and updates a run-local `ontology.md` so the discovered application view can be reused later for navigation, testing, and documentation.
+The navigation agent explores a declared web application source through typed Playwright MCP-backed browser operations. Live navigation collects events, snapshots, and page affordances; a separate batch/checkpoint analyzer updates run-local `ontology.md` so the discovered application view can be reused later for navigation, testing, and documentation.
 
 ## Runtime Layout
 
@@ -50,18 +50,24 @@ The navigation source YAML is expected to define:
 
 ## Agent Task
 
-For each user instruction, the agent must:
+For each user instruction, the live navigation runtime must:
 
 1. load the declared navigation source
 2. create or resume a navigation run
 3. read the run-local ontology
 4. inspect the current browser state
-5. decide the best next step toward the user goal
-6. execute the step via Playwright MCP
+5. try the deterministic ontology route cache when coverage exists
+6. switch to exploratory typed browser operations when the cache is missing, partial, or failed
 7. validate the resulting page evidence
-8. update the run-local ontology with grounded observations
-9. persist events, snapshots, and run metadata
-10. stop with an explicit status when the goal is completed, blocked, or needs user input
+8. persist events, snapshots, affordances, and run metadata
+9. stop with an explicit status when the goal is completed, blocked, or needs user input
+
+For an ontology update checkpoint, the batch analyzer must:
+
+1. read the run-local ontology and collected run evidence
+2. produce additive, evidence-referenced ontology deltas
+3. merge the deltas into run-local `ontology.md`
+4. preserve unresolved uncertainty as validation notes or open questions
 
 ## Ontology Expectations
 
@@ -83,7 +89,7 @@ The ontology should capture:
 ## Operational Rules
 
 - Do not fabricate UI facts.
-- Prefer incremental ontology updates over full rewrites.
+- Prefer checkpoint/batch ontology updates over per-step ontology mutation.
 - Persist provenance to snapshots or events whenever possible.
 - If the agent is uncertain, it must ask for user input rather than guess.
 - If the agent is blocked, it must record the blocking reason explicitly.
