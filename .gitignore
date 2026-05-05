@@ -42,5 +42,6 @@ Thumbs.db
 *.log
 
 workspace/**/extraction_agent/**
+workspace/**/exploration_agent/**
 workspace/**/navigation_agent_clearfacts/**
 .playwright-mcp

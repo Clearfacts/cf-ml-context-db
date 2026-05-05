@@ -286,6 +286,91 @@ profiles:
                 }
             )
 
+    def test_goal_assessment_runtime_tool_accepts_compact_execution_evidence(self) -> None:
+        class FakeGoalAssessment:
+            def __init__(self):
+                self.query = None
+
+            def invoke(self, query):
+                self.query = query
+                return GoalAssessmentTaskOutput(
+                    status=GoalAssessmentStatus.COMPLETED,
+                    summary="Archive page is visible.",
+                    confirmed_evidence=["Archive title is visible."],
+                )
+
+        goal_assessment = FakeGoalAssessment()
+        tools = build_navigation_runtime_tools(
+            route_cache=object(),
+            route_planner=object(),
+            execution=object(),
+            recovery=object(),
+            goal_assessment=goal_assessment,
+        )
+        tool_by_name = {tool.name: tool for tool in tools}
+        payload = tool_by_name["assess_goal_progress"].invoke(
+            {
+                "user_goal": "Open the archive",
+                "execution": {
+                    "subagent_name": "navigation-executor",
+                    "operation": "inspect",
+                    "status": "completed",
+                    "source_name": "navigation_agent_clearfacts",
+                    "run_timestamp": "20260504_182509",
+                    "run_folder": "/tmp/run",
+                    "ontology_path": "/tmp/run/ontology.md",
+                    "message": "Reached archive.",
+                    "current_page": {
+                        "url": "https://example.test/archive",
+                        "title": "Archive",
+                        "text_excerpt": "Archive filters are visible.",
+                    },
+                    "raw_result": {
+                        "status": "completed",
+                        "message": "Reached archive.",
+                    },
+                },
+            }
+        )
+        result = GoalAssessmentTaskOutput.model_validate_json(payload)
+
+        self.assertEqual(result.status, GoalAssessmentStatus.COMPLETED)
+        self.assertIsNotNone(goal_assessment.query)
+        self.assertEqual(goal_assessment.query.execution.source_name, "navigation_agent_clearfacts")
+        self.assertEqual(goal_assessment.query.execution.run_timestamp, "20260504_182509")
+
+    def test_goal_assessment_runtime_tool_returns_compact_error_for_incomplete_execution(self) -> None:
+        class FailingGoalAssessment:
+            def invoke(self, _query):
+                raise AssertionError("Incomplete tool input should not reach goal assessment.")
+
+        tools = build_navigation_runtime_tools(
+            route_cache=object(),
+            route_planner=object(),
+            execution=object(),
+            recovery=object(),
+            goal_assessment=FailingGoalAssessment(),
+        )
+        tool_by_name = {tool.name: tool for tool in tools}
+        payload = tool_by_name["assess_goal_progress"].invoke(
+            {
+                "user_goal": "Open the archive",
+                "execution": {
+                    "status": "completed",
+                    "message": "x" * 5000,
+                    "current_page": {
+                        "title": "Archive",
+                        "text_excerpt": "y" * 5000,
+                    },
+                },
+            }
+        )
+        result = json.loads(payload)
+
+        self.assertEqual(result["tool_status"], "invalid_input")
+        self.assertLess(len(payload), 1200)
+        self.assertNotIn("yyyyyyyyyyyy", payload)
+
     def test_route_cache_executes_parseable_legacy_route_and_reports_partial_goal(self) -> None:
         class FakeExecution:
             def __init__(self):

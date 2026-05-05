@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -14,6 +14,11 @@ from context_db.agents.clearfacts_navigation_agent.schemas import (
     NavigationOntologyDelta,
     NavigationPageEvidence,
 )
+
+
+def _optional_raw_str(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    return str(value) if value not in (None, "") else None
 
 
 class DeepAgentExecutionStatus(str, Enum):
@@ -143,6 +148,62 @@ class NavigationExecutionTaskOutput(BaseModel):
     raw_result: ClearfactsNavigationResult
 
 
+class NavigationExecutionEvidence(BaseModel):
+    """Compact execution evidence accepted by coordinator-side evaluator tools."""
+
+    subagent_name: str | None = None
+    operation: BrowserExecutionOperation | None = None
+    status: NavigationExecutionStatus | None = None
+    message: str | None = None
+    question_for_user: str | None = None
+    current_page: NavigationPageEvidence | None = None
+    run_timestamp: str | None = None
+    run_folder: str | None = None
+    ontology_path: str | None = None
+    trace_path: str | None = None
+    source_name: str | None = None
+    instruction: str | None = None
+    role: str | None = None
+    raw_result: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_model_payload(cls, value: Any) -> Any:
+        if isinstance(value, NavigationExecutionTaskOutput | ClearfactsNavigationResult):
+            return value.model_dump(mode="json", exclude_none=True)
+        return value
+
+    @model_validator(mode="after")
+    def inherit_raw_result_identity(self) -> "NavigationExecutionEvidence":
+        raw_result = self.raw_result if isinstance(self.raw_result, dict) else {}
+        self.source_name = self.source_name or _optional_raw_str(raw_result, "source_name")
+        self.run_timestamp = self.run_timestamp or _optional_raw_str(raw_result, "run_timestamp")
+        self.run_folder = self.run_folder or _optional_raw_str(raw_result, "run_folder")
+        self.ontology_path = self.ontology_path or _optional_raw_str(raw_result, "ontology_path")
+        self.instruction = self.instruction or _optional_raw_str(raw_result, "instruction")
+        self.role = self.role or _optional_raw_str(raw_result, "role")
+        self.message = self.message or _optional_raw_str(raw_result, "message")
+        if self.status is None and raw_result.get("status"):
+            try:
+                self.status = NavigationExecutionStatus(str(raw_result["status"]))
+            except ValueError:
+                pass
+        if self.current_page is None and isinstance(raw_result.get("current_page"), dict):
+            self.current_page = NavigationPageEvidence.model_validate(raw_result["current_page"])
+        return self
+
+    @property
+    def missing_required_context(self) -> list[str]:
+        missing: list[str] = []
+        if not self.source_name:
+            missing.append("execution.source_name or execution.raw_result.source_name")
+        if not self.run_timestamp:
+            missing.append("execution.run_timestamp or execution.raw_result.run_timestamp")
+        if self.status is None:
+            missing.append("execution.status")
+        return missing
+
+
 class CachedRouteExecutionStatus(str, Enum):
     COMPLETED = "completed"
     PARTIAL = "partial"
@@ -264,7 +325,7 @@ class RecoveryStrategy(str, Enum):
 
 class RecoveryAnalysisTaskInput(BaseModel):
     user_goal: str
-    execution: NavigationExecutionTaskOutput
+    execution: NavigationExecutionEvidence
 
 
 class RecoveryAnalysisTaskOutput(BaseModel):
@@ -300,7 +361,7 @@ class GoalAssessmentStatus(str, Enum):
 
 class GoalAssessmentTaskInput(BaseModel):
     user_goal: str
-    execution: NavigationExecutionTaskOutput
+    execution: NavigationExecutionEvidence
 
 
 class GoalAssessmentTaskOutput(BaseModel):

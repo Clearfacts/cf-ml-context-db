@@ -2,7 +2,12 @@
 context_db.agents — agent entry points built on top of the context database.
 """
 
-__all__ = ["SourceOntologyQueryAgent", "ClearfactsNavigationAgent", "ClearfactsNavigationDeepAgent"]
+__all__ = [
+    "SourceOntologyQueryAgent",
+    "ClearfactsNavigationAgent",
+    "ClearfactsNavigationDeepAgent",
+    "ClearfactsExplorationAgent",
+]
 
 
 def __getattr__(name: str):
@@ -14,6 +19,10 @@ def __getattr__(name: str):
         from .clearfacts_navigation_deepagent import ClearfactsNavigationDeepAgent
 
         return ClearfactsNavigationDeepAgent
+    if name == "ClearfactsExplorationAgent":
+        from .clearfacts_exploration_agent import ClearfactsExplorationAgent
+
+        return ClearfactsExplorationAgent
     if name == "SourceOntologyQueryAgent":
         from .source_ontology_query_agent import SourceOntologyQueryAgent
 

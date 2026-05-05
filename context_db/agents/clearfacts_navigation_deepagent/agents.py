@@ -1224,7 +1224,12 @@ class ClearfactsNavigationRecoverySubAgent:
         self._llm = llm.with_structured_output(RecoveryAnalysisTaskOutput)
 
     def invoke(self, query: RecoveryAnalysisTaskInput) -> RecoveryAnalysisTaskOutput:
-        run = ensure_navigation_run(query.execution.raw_result.source_name, timestamp=query.execution.run_timestamp)
+        if query.execution.missing_required_context:
+            raise ValueError(
+                "Recovery analysis execution context is missing: "
+                + ", ".join(query.execution.missing_required_context)
+            )
+        run = ensure_navigation_run(query.execution.source_name, timestamp=query.execution.run_timestamp)
         prompt = RECOVERY_ANALYZER_USER_PROMPT_TEMPLATE.format(
             user_goal=query.user_goal,
             execution_result_yaml=build_execution_result_yaml(query.execution),
@@ -1264,7 +1269,12 @@ class ClearfactsNavigationGoalAssessmentSubAgent:
         self._llm = llm.with_structured_output(GoalAssessmentTaskOutput)
 
     def invoke(self, query: GoalAssessmentTaskInput) -> GoalAssessmentTaskOutput:
-        run = ensure_navigation_run(query.execution.raw_result.source_name, timestamp=query.execution.run_timestamp)
+        if query.execution.missing_required_context:
+            raise ValueError(
+                "Goal assessment execution context is missing: "
+                + ", ".join(query.execution.missing_required_context)
+            )
+        run = ensure_navigation_run(query.execution.source_name, timestamp=query.execution.run_timestamp)
         prompt = GOAL_ASSESSOR_USER_PROMPT_TEMPLATE.format(
             user_goal=query.user_goal,
             execution_result_yaml=build_execution_result_yaml(query.execution),

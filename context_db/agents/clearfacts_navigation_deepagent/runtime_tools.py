@@ -23,9 +23,9 @@ def _truncate(value: str | None, *, limit: int) -> str | None:
 def _compact_page(
     page: Any | None,
     *,
-    text_limit: int = 2500,
-    summary_limit: int = 3500,
-    affordance_limit: int = 50,
+    text_limit: int = 1200,
+    summary_limit: int = 900,
+    affordance_limit: int = 12,
 ) -> dict[str, Any] | None:
     if page is None:
         return None
@@ -41,14 +41,19 @@ def _compact_execution_output(result: Any) -> str:
     payload = result.model_dump(mode="json", exclude_none=True)
     payload.pop("events", None)
     payload["current_page"] = _compact_page(result.current_page)
+    if result.raw_result is not None:
+        payload["source_name"] = result.raw_result.source_name
+        payload["instruction"] = _truncate(result.raw_result.instruction, limit=500)
+        payload["role"] = result.raw_result.role
 
     raw_result = payload.get("raw_result", {})
     if isinstance(raw_result, dict):
         raw_result.pop("events", None)
         raw_result.pop("tool_inventory", None)
-        raw_result["message"] = _truncate(raw_result.get("message"), limit=2000)
-        raw_result["current_page"] = _compact_page(result.raw_result.current_page)
-    payload["message"] = _truncate(payload.get("message"), limit=2000)
+        raw_result.pop("current_page", None)
+        raw_result["message"] = _truncate(raw_result.get("message"), limit=600)
+        raw_result["instruction"] = _truncate(raw_result.get("instruction"), limit=500)
+    payload["message"] = _truncate(payload.get("message"), limit=600)
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -71,6 +76,25 @@ def _compact_route_cache_output(result: Any) -> str:
             summary_limit=1200,
             affordance_limit=20,
         )
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _compact_tool_input_error(
+    *,
+    tool_name: str,
+    message: str,
+    missing_fields: list[str] | None = None,
+) -> str:
+    payload = {
+        "tool_status": "invalid_input",
+        "tool": tool_name,
+        "message": _truncate(message, limit=500),
+        "missing_fields": missing_fields or [],
+        "retry_guidance": (
+            "Pass the compact JSON object returned by execute_browser_operation as the execution value. "
+            "Do not reconstruct raw_result or include long page text."
+        ),
+    }
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -107,11 +131,23 @@ def build_navigation_runtime_tools(
 
     def analyze_recovery(**kwargs: Any) -> str:
         query = RecoveryAnalysisTaskInput.model_validate(kwargs)
+        if query.execution.missing_required_context:
+            return _compact_tool_input_error(
+                tool_name="analyze_recovery",
+                message="Execution evidence is missing required context for recovery analysis.",
+                missing_fields=query.execution.missing_required_context,
+            )
         result = recovery.invoke(query)
         return result.model_dump_json()
 
     def assess_goal_progress(**kwargs: Any) -> str:
         query = GoalAssessmentTaskInput.model_validate(kwargs)
+        if query.execution.missing_required_context:
+            return _compact_tool_input_error(
+                tool_name="assess_goal_progress",
+                message="Execution evidence is missing required context for goal assessment.",
+                missing_fields=query.execution.missing_required_context,
+            )
         result = goal_assessment.invoke(query)
         return result.model_dump_json()
 
@@ -149,7 +185,8 @@ def build_navigation_runtime_tools(
             name="analyze_recovery",
             description=(
                 "Analyze a blocked or uncertain navigation result and recommend one bounded recovery move. "
-                "Input must match RecoveryAnalysisTaskInput. Returns RecoveryAnalysisTaskOutput as JSON."
+                "Pass the compact JSON object returned by execute_browser_operation as execution. "
+                "Returns RecoveryAnalysisTaskOutput as JSON."
             ),
             args_schema=RecoveryAnalysisTaskInput,
         ),
@@ -158,7 +195,8 @@ def build_navigation_runtime_tools(
             name="assess_goal_progress",
             description=(
                 "Assess whether the user's navigation goal has been satisfied by the latest execution result. "
-                "Input must match GoalAssessmentTaskInput. Returns GoalAssessmentTaskOutput as JSON."
+                "Pass the compact JSON object returned by execute_browser_operation as execution. "
+                "Returns GoalAssessmentTaskOutput as JSON."
             ),
             args_schema=GoalAssessmentTaskInput,
         ),

@@ -37,8 +37,9 @@
   - the exploration tab includes an explicit **Update ontology** action that analyzes collected run evidence in batch
 
 ## Clearfacts navigation agent
-- The interactive Clearfacts exploration agent lives in `context_db/agents/clearfacts_navigation_agent/`.
+- The low-level interactive Clearfacts navigation runtime lives in `context_db/agents/clearfacts_navigation_agent/`.
 - The DeepAgents orchestration layer lives in `context_db/agents/clearfacts_navigation_deepagent/`.
+- The scenario-level exploration orchestrator lives in `context_db/agents/clearfacts_exploration_agent/`.
 - Source-driven configuration now lives in `agents/sources/navigation_agent_clearfacts.yaml`.
 - Exploration runs are persisted under `workspace/<source_name>/navigation_agent/<timestamp>/`.
 - Each run stores:
@@ -63,8 +64,9 @@
   - navigation paths
   - validation notes
   - open questions
-- Use `agents/navigation_agent/setup_run.py` to create a run explicitly, or let the agent create one on first invocation.
-- Use `agents/navigation_agent/finalize_run.py` to merge a run-local ontology into the source-level ontology when you need to promote an older run manually.
+- Longer exploration scenarios can be seeded from `agents/scenarios/<source_name>/NN_exploration_<topic>.md`.
+- `ClearfactsExplorationAgent` copies a seed scenario into `workspace/<source_name>/exploration_agent/<timestamp>/scenario.md`, updates that run-local scenario as tasks progress, and records future human-review candidates in `discoveries.md`.
+- `workspace/<source_name>/exploration_agent/index.yaml` tracks runs per scenario seed. When `run_timestamp` is omitted, `ClearfactsExplorationAgent` resumes the active run for that seed if it still has `pending` or `in_progress` tasks.
 - Example CLI invocation:
 
 ```bash

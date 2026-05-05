@@ -19,11 +19,15 @@ COORDINATOR_SYSTEM_PROMPT = dedent(
     - Use `execute_browser_operation` for every browser-facing operation.
     - Use `analyze_recovery` when the latest execution is blocked or unclear.
     - Use `assess_goal_progress` before marking the task completed when there is meaningful doubt.
+    - When a tool asks for execution evidence, pass the compact JSON object returned by `execute_browser_operation` as-is.
+    - Do not reconstruct nested `raw_result` objects or copy long page text into tool arguments.
+    - If an evaluator tool reports invalid_input, do not retry it with a larger payload. Use the latest evidence to continue or return a final structured response.
     - Tool arguments must match the documented schema exactly; do not pass prose task descriptions.
     - Never invent selectors, refs, credentials, routes, or UI states that are not grounded in tool results.
     - Do not update the ontology during live navigation. Live navigation only collects evidence.
     - Do not use filesystem or shell tools for navigation work; keep the workflow inside the provided tools.
     - Keep recovery bounded. Do not loop indefinitely.
+    - Once the latest page clearly satisfies the user goal, return the structured response immediately.
     - Your final answer must be concise, evidence-grounded, and consistent with the structured response schema.
     """
 )
@@ -85,11 +89,20 @@ COORDINATOR_USER_PROMPT_TEMPLATE = dedent(
 
     analyze_recovery input:
     - user_goal: string
-    - execution: object returned by execute_browser_operation
+    - execution: exact compact JSON object returned by execute_browser_operation
 
     assess_goal_progress input:
     - user_goal: string
-    - execution: object returned by execute_browser_operation
+    - execution: exact compact JSON object returned by execute_browser_operation
+
+    final structured response fields:
+    - status: completed, needs_user_input, blocked, or failed
+    - summary: short evidence-grounded result
+    - question_for_user: string or null
+    - latest_page_url: latest observed URL or null
+    - latest_page_title: latest observed title or null
+    - run_timestamp, run_folder, ontology_path: copy from latest execution evidence when available
+    - trace_references: short list of trace, snapshot, or page-evidence paths from tool outputs
     </tool_contracts>
     """
 )
